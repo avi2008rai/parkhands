@@ -1,0 +1,147 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: admin
+  name: admin
+  namespace: {{ CICD_NAMESPACE }}
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: admin
+  template:
+    metadata:
+      labels:
+        app: admin
+    spec:
+      imagePullSecrets:
+      - name: parkhands-registry-secret
+      initContainers:
+      - name: wait-graphql
+        image: radial/busyboxplus:curl
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            until curl -sSf -X POST -H "Content-Type: application/json" --data '{"query": "{ languagesList { name } }"}' ${GRAPHQL_API_URL} > /dev/null; do echo waiting for GraphQL API; sleep 2; done;
+        env:
+        - name: GRAPHQL_API_URL
+          value: http://graphql:5000/graphql
+      containers:
+      - name: ph-admin
+        image: {{ REGISTRY_BASE_URL }}/ph_admin:{{ DEPLOY_ADMIN_IMAGE_TAG }}
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+        ports:
+        - containerPort: 1337
+        env:
+        - name: GRAPHQL_API_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAPHQL_API_ENDPOINT
+        - name: GRAPHQL_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAPHQL_API_URL
+        - name: GRAPHQL_WS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAPHQL_WS_URL
+        - name: ADMIN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: ADMIN_URL
+        - name: ADMIN_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: ADMIN_PORT
+        - name: CLIENT_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: CLIENT_URL
+        - name: CLIENT_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: CLIENT_PORT
+        - name: WIDGET_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: WIDGET_URL
+        - name: CDN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: CDN_URL
+        - name: FILE_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: FILE_API_URL
+        - name: FILE_API_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: FILE_API_ENDPOINT
+        - name: BUILD_ID
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: BUILD_ID
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NODE_ENV
+        - name: NPM_RUN_TARGET
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NPM_RUN_TARGET
+        - name: GOOGLE_MAPS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: GOOGLE_MAPS_API_KEY
+        livenessProbe:
+          tcpSocket:
+            port: 1337
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        readinessProbe:
+          tcpSocket:
+            port: 1337
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: 100m
+            memory: 0.5Gi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        workingDir: /web/admin
+      restartPolicy: Always
+status: {}

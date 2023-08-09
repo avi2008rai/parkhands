@@ -1,0 +1,30 @@
+---
+- name: Create ingress for redirect
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/domain/ingresses/admin-parkhands-de-redirect.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create ingress for redirect
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/domain/ingresses/client-parkhands-de-redirect.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create ingress for redirect
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/domain/ingresses/api-parkhands-de-redirect.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create ingress for redirect
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/domain/ingresses/storage-parkhands-de-redirect.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create ingress for redirect
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/domain/ingresses/monitor-parkhands-de-redirect.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"

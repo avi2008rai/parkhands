@@ -1,0 +1,30 @@
+---
+- hosts: all
+
+  vars_files:
+    - default.config.yml
+
+  pre_tasks:
+    - name: Define config_dir.
+      set_fact:
+        config_dir: "{{ playbook_dir }}"
+      when: config_dir is not defined
+      tags: ['always']
+
+    - include_vars: "{{ item }}"
+      with_fileglob:
+        - "{{ config_dir }}/config.yml"
+        - "{{ config_dir }}/environments/{{ lookup('env', 'ENV_NAME')|default(env_name, true)|default(ansible_env.ENV_NAME)|default(omit) }}/group_vars/all/vars.yml"
+      tags: ['always']
+
+  tasks:
+
+    #- include: tasks/kubectl.yml
+    - include: tasks/set-global-secrets.yml
+    - include: tasks/cert-manager/setup-cert-manager.yml
+    - include: tasks/cluster-monitoring/update-grafana.yml
+    - include: tasks/loki/setup-loki-stack.yml
+    - include: tasks/minio/setup-minio-backup-mirror.yml
+    - include: tasks/fluentd/setup-fluentd.yml
+    - include: tasks/velero/install-velero.yml
+    - include: tasks/dind/setup-dind.yml

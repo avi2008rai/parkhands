@@ -1,0 +1,134 @@
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: postgresql-backup
+  namespace: {{ CICD_NAMESPACE }}
+spec:
+  schedule: "0 2 * * *"
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        spec:
+          initContainers:
+          - name: wait-backup-storage
+            image: radial/busyboxplus:curl
+            securityContext:
+              allowPrivilegeEscalation: false
+            command: ['sh', '-c', 'until curl -sSf --insecure https://backup.parkhands.com:9443/minio/health/live > /dev/null; do echo waiting for Minio to start; sleep 5; done;']
+          - name: wait-backup-mirror-storage
+            image: radial/busyboxplus:curl
+            securityContext:
+              allowPrivilegeEscalation: false
+            command: ['sh', '-c', 'until curl -sSf https://backup-mirror.parkhands.com/minio/health/live > /dev/null; do echo waiting for Minio to start; sleep 5; done;']
+          - name: git-sync
+            image: alpine/git:v2.24.1
+            securityContext:
+              allowPrivilegeEscalation: false
+            command: ['sh', '-c']
+            args:
+              - |
+                cd /workdir
+                git clone --depth 1 {{ GIT_CLONE_URL }} -b {{ CICD_GIT_BRANCH }} parkhands
+                cd parkhands
+                git fetch origin {{ CICD_GIT_REF }}:pr-1
+                git status
+            volumeMounts:
+            - name: git-source
+              mountPath: /workdir
+            env:
+            - name: GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: github-credentials
+                  key: username
+            - name: GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: github-credentials
+                  key: password
+          containers:
+          - name: postgres-backup
+            image: postgres:11.5
+            securityContext:
+              allowPrivilegeEscalation: false
+            command: ["/bin/bash", "-c"]
+            args:
+              - |
+                apt-get update > /dev/null
+                apt-get install -y python3 > /dev/null
+                chmod +x /usr/local/bin/autopgsqlbackup.sh
+                /usr/local/bin/./autopgsqlbackup.sh
+                touch /tmp/pod/main-terminated
+            env:
+            - name: DB_ENV
+              value: {{ CICD_GIT_BRANCH }}
+            - name: PGHOST
+              valueFrom:
+                configMapKeyRef:
+                  name: env-configmap
+                  key: DB_HOST
+            - name: PGDATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: env-configmap
+                  key: DB_NAME
+            - name: PGUSER
+              valueFrom:
+                configMapKeyRef:
+                  name: env-configmap
+                  key: POSTGRESQL_USERNAME
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: env-secrets
+                  key: POSTGRESQL_PASSWORD
+            volumeMounts:
+            - name: git-source
+              mountPath: /usr/local/bin/
+              subPath: parkhands/scripts/db/backup/
+            - name: backup-dir
+              mountPath: /storage
+            - name: tmp-pod
+              mountPath: /tmp/pod
+          - name: copy-backup
+            image: minio/mc:RELEASE.2020-04-04T05-28-55Z
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              allowPrivilegeEscalation: false
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                while [ ! -f /tmp/pod/main-terminated ]; do echo waiting for main pod to terminate; sleep 2; done;
+                mc config host add backup https://backup.parkhands.com:9443 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} --api S3v4 --insecure
+                mc config host add backup-mirror https://backup-mirror.parkhands.com ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} --api S3v4
+                mc mirror /storage/postgresql/postgresql-backups/ backup-mirror/postgresql/postgresql-backups/staging/ --overwrite
+                mc mirror backup-mirror/postgresql/postgresql-backups/staging/ backup/postgresql/postgresql-backups/staging/ --overwrite --insecure
+            env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: env-secrets
+                  key: BACKUP_MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: env-secrets
+                  key: BACKUP_MINIO_SECRET_KEY
+            volumeMounts:
+              - name: backup-dir
+                mountPath: /storage
+                readOnly: true
+              - name: tmp-pod
+                mountPath: /tmp/pod
+                readOnly: true
+          restartPolicy: Never
+          volumes:
+          - name: git-source
+            emptyDir: {}
+          - name: backup-dir
+            emptyDir: {}
+          - name: tmp-pod
+            emptyDir: {}

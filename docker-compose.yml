@@ -1,0 +1,415 @@
+version: "3.7"
+#see https://github.com/docker/compose/issues/4513 for details on resource limits
+
+volumes:
+  postgres-data:
+  storage-data:
+  grafana-data:
+
+services:
+  db-0:
+    image: ph_postgresql-repmgr:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1024M
+        reservations:
+          memory: 512M
+    container_name: ph_db
+    build:
+      context: ./db
+    volumes:
+      - 'postgres-data:/bitnami/postgresql'
+      - './db/conf.d:/opt/bitnami/postgresql/conf/conf.d'
+      - './db/init:/docker-entrypoint-initdb.d'
+      - './db/init/.psqlrc:/root/.psqlrc'
+      - './shared:/shared'
+      - './scripts/db:/scripts/db'
+      - './sql-dumps:/sql-dumps'
+    ports:
+      - '${DB_PORT}:${DB_PORT}'
+    environment:
+      - POSTGRESQL_USERNAME=${POSTGRESQL_USERNAME}
+      - POSTGRESQL_PASSWORD=${POSTGRESQL_PASSWORD}
+      - PGPASSWORD=${POSTGRESQL_PASSWORD}
+      - POSTGRESQL_DATABASE=${DB_NAME}
+      - REPMGR_PASSWORD=${REPMGR_PASSWORD}
+      - REPMGR_PRIMARY_HOST=db-0
+      - REPMGR_PRIMARY_PORT=5432
+      - REPMGR_PARTNER_NODES=db-0
+      - REPMGR_NODE_NAME=db-0
+      - REPMGR_NODE_NETWORK_NAME=db-0
+      - REPMGR_PORT_NUMBER=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_PORT=${DB_PORT}
+      - DB_SCHEMA=${DB_SCHEMA}
+      - DB_ANON_ROLE=${DB_ANON_ROLE}
+      - JWT_SECRET=${JWT_SECRET}
+      - NODE_ENV=${NODE_ENV}
+      - BITNAMI_DEBUG=true
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRESQL_USERNAME} -d ${DB_NAME}']
+      interval: 5s
+      timeout: 5s
+      retries: 3
+    restart: always
+    networks:
+      - ph-net
+
+  graphql:
+    image: ph_graphql:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1024M
+        reservations:
+          memory: 512M
+    container_name: ph_graphql
+    build:
+      context: ./graphql
+    ports:
+      - '${POSTGRAPHILE_PORT}:${POSTGRAPHILE_PORT}'
+    volumes:
+      - './graphql:/app'
+      - './schema:/schema'
+      - './shared:/app/shared'
+    depends_on:
+      - db-0
+    environment:
+      - GRAPHQL_API_URL=${GRAPHQL_API_URL}
+      - GRAPHQL_WS_URL=${GRAPHQL_WS_URL}
+      - GRAPHQL_API_ENDPOINT=${GRAPHQL_API_ENDPOINT}
+      - POSTGRAPHILE_PORT=${POSTGRAPHILE_PORT}
+      - DB_ANON_ROLE=${DB_ANON_ROLE}
+      - DB_HOST=${DB_HOST}
+      - DB_NAME=${DB_NAME}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_SCHEMA=${DB_SCHEMA}
+      - JWT_SECRET=${JWT_SECRET}
+      - POSTGRESQL_USERNAME=${POSTGRESQL_USERNAME}
+      - POSTGRESQL_PASSWORD=${POSTGRESQL_PASSWORD}
+      - POSTGRAPHILE_CORS=${POSTGRAPHILE_CORS}
+      - POSTGRAPHILE_ALLOW_EXPLAIN=${POSTGRAPHILE_ALLOW_EXPLAIN}
+    networks:
+      - ph-net
+    restart: always
+
+  admin:
+    image: ph_admin:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 750M
+        reservations:
+          memory: 200M
+    container_name: ph_admin
+    build:
+      context: ./web
+      dockerfile: $PWD/web/admin/Dockerfile
+    volumes:
+      - './web:/web'
+    depends_on:
+      - graphql
+    networks:
+      - ph-net
+    ports:
+      - '${ADMIN_PORT}:${ADMIN_PORT}'
+    environment:
+      - GRAPHQL_API_URL=${GRAPHQL_API_URL}
+      - GRAPHQL_WS_URL=${GRAPHQL_WS_URL}
+      - GRAPHQL_API_ENDPOINT=${GRAPHQL_API_ENDPOINT}
+      - ADMIN_PORT=${ADMIN_PORT}
+      - CLIENT_PORT=${CLIENT_PORT}
+      - WIDGET_URL=${WIDGET_URL}
+      - FILE_API_URL=${FILE_API_URL}
+      - FILE_API_ENDPOINT=${FILE_API_ENDPOINT}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - NODE_ENV=${NODE_ENV}
+      - BUILD_ID=${BUILD_ID}
+      - NPM_RUN_TARGET=${NPM_RUN_TARGET}
+
+  client:
+    image: ph_client:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 1024M
+        reservations:
+          memory: 250M
+    container_name: ph_client
+    build:
+      context: ./web
+      dockerfile: $PWD/web/client/Dockerfile
+    volumes:
+      - './web:/web'
+    depends_on:
+      - graphql
+    networks:
+      - ph-net
+    ports:
+      - '${CLIENT_PORT}:${CLIENT_PORT}'
+    environment:
+      - GRAPHQL_API_URL=${GRAPHQL_API_URL}
+      - GRAPHQL_WS_URL=${GRAPHQL_WS_URL}
+      - GRAPHQL_API_ENDPOINT=${GRAPHQL_API_ENDPOINT}
+      - ADMIN_PORT=${ADMIN_PORT}
+      - CLIENT_URL=${CLIENT_URL}
+      - CLIENT_PORT=${CLIENT_PORT}
+      - WIDGET_URL=${WIDGET_URL}
+      - FILE_API_URL=${FILE_API_URL}
+      - FILE_API_ENDPOINT=${FILE_API_ENDPOINT}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - NODE_ENV=${NODE_ENV}
+      - BUILD_ID=${BUILD_ID}
+      - CDN_URL=${CDN_URL}
+      - NPM_RUN_TARGET=${NPM_RUN_TARGET}
+      - STRIPE_PUBLIC_KEY=${STRIPE_PUBLIC_KEY}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
+      - JWT_SECRET=${JWT_SECRET}
+      - DATASET_CURRENT_FILENAME=${DATASET_CURRENT_FILENAME}
+
+  widget:
+    image: ph_widget:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '0.40'
+          memory: 300M
+        reservations:
+          memory: 100M
+    container_name: ph_widget
+    build:
+      context: ./web
+      dockerfile: $PWD/web/widget/Dockerfile
+    volumes:
+      - './web:/web'
+    depends_on:
+      - graphql
+    networks:
+      - ph-net
+    ports:
+      - '${WIDGET_PORT}:${WIDGET_PORT}'
+    environment:
+      - GRAPHQL_API_ENDPOINT=${GRAPHQL_API_ENDPOINT}
+      - GRAPHQL_API_URL=${GRAPHQL_API_URL}
+      - GRAPHQL_WS_URL=${GRAPHQL_WS_URL}
+      - WIDGET_PORT=${WIDGET_PORT}
+      - WIDGET_URL=${WIDGET_URL}
+      - CLIENT_URL=${CLIENT_URL}
+      - CDN_URL=${CDN_URL}
+      - NODE_ENV=${NODE_ENV}
+      - BUILD_ID=${BUILD_ID}
+      - NPM_RUN_TARGET=${NPM_RUN_TARGET}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+
+  organic:
+    image: ph_organic:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 750M
+        reservations:
+          memory: 250M
+    container_name: ph_organic
+    build:
+      context: ./organic
+    ports:
+      - '${FILE_API_PORT}:${FILE_API_PORT}'
+      - '${REST_API_PORT}:${REST_API_PORT}'
+      - '${STRIPE_WEBHOOK_PORT}:${STRIPE_WEBHOOK_PORT}'
+    volumes:
+      - './organic:/organic'
+      - './shared:/organic/cells/event-hub/shared'
+      - './shared:/organic/cells/file-api/shared'
+      - './shared:/organic/cells/rest-api/shared'
+      - './shared:/organic/cells/payment-hub/shared'
+      - './shared:/organic/cells/dataset-transformer/shared'
+    depends_on:
+      - db-0
+    environment:
+      - ADMIN_URL=${ADMIN_URL}
+      - CLIENT_URL=${CLIENT_URL}
+      - NODE_ENV=${NODE_ENV}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - POSTGRESQL_USERNAME=${POSTGRESQL_USERNAME}
+      - POSTGRESQL_PASSWORD=${POSTGRESQL_PASSWORD}
+      - SENDGRID_FROM_ADDR=${SENDGRID_FROM_ADDR}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - SENDGRID_SEND_DEV=${SENDGRID_SEND_DEV}
+      - ORGANIC_SENTRY_DSN=${ORGANIC_SENTRY_DSN}
+      - GRAPHQL_API_URL=${GRAPHQL_API_URL}
+      - GRAPHQL_API_ENDPOINT=${GRAPHQL_API_ENDPOINT}
+      - REST_API_URL=${REST_API_URL}
+      - REST_API_ENDPOINT=${REST_API_ENDPOINT}
+      - REST_API_PORT=${REST_API_PORT}
+      - REST_API_PROTOCOL=${REST_API_PROTOCOL}
+      - FILE_API_URL=${FILE_API_URL}
+      - FILE_API_ENDPOINT=${FILE_API_ENDPOINT}
+      - FILE_API_PORT=${FILE_API_PORT}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_PORT=${MINIO_PORT}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_SECURITY=${MINIO_SECURITY}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - MINIO_UPLOADS_FOLDER_NAME=${MINIO_UPLOADS_FOLDER_NAME}
+      - DATASET_CURRENT_FILENAME=${DATASET_CURRENT_FILENAME}
+      - DATASET_SOURCE_BUCKET=${DATASET_SOURCE_BUCKET}
+      - DATASET_STATIC_SLOTS_BUCKET=${DATASET_STATIC_SLOTS_BUCKET}
+      - DATASET_STATIC_SPACES_BUCKET=${DATASET_STATIC_SPACES_BUCKET}
+      - DATASET_STARTUP_SYNC=${DATASET_STARTUP_SYNC}
+      - JWT_SECRET=${JWT_SECRET}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_ENDPOINT=${STRIPE_WEBHOOK_ENDPOINT}
+      - STRIPE_WEBHOOK_PORT=${STRIPE_WEBHOOK_PORT}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+    networks:
+      - ph-net
+    restart: always
+
+  storage:
+    image: minio/minio:RELEASE.2020-04-04T05-39-31Z
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 400M
+        reservations:
+          memory: 200M
+    container_name: ph_storage
+    ports:
+      - '${MINIO_PORT}:${MINIO_PORT}'
+    volumes:
+      - 'storage-data:/storage'
+    environment:
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+    entrypoint: sh
+    command: >
+      -c 'mkdir -p /storage/static
+      &&  mkdir -p /storage/files
+      &&  mkdir -p /storage/thumbnails
+      &&  mkdir -p /storage/dataset
+      &&  mkdir -p /storage/static-slots
+      &&  mkdir -p /storage/static-spaces
+      &&  /usr/bin/minio server /storage'
+    networks:
+      - ph-net
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: always
+
+  storage-client:
+    image: minio/mc:RELEASE.2020-04-04T05-28-55Z
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 200M
+        reservations:
+          memory: 100M
+    container_name: ph_storage_client
+    depends_on:
+      - storage
+    environment:
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_PORT=${MINIO_PORT}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_SECURITY=${MINIO_SECURITY}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - MINIO_UPLOADS_FOLDER_NAME=${MINIO_UPLOADS_FOLDER_NAME}
+    entrypoint: sh
+    command: >
+      -c 'mc config host add storage http://${MINIO_ENDPOINT}:${MINIO_PORT} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} --api S3v4
+      &&  mc policy set download storage/static
+      &&  mc policy set download storage/files
+      &&  mc policy set download storage/thumbnails
+      &&  mc policy set download storage/dataset
+      &&  mc policy set download storage/static-slots
+      &&  mc policy set download storage/static-spaces'
+    networks:
+      - ph-net
+
+  image-resizer:
+    image: ph_image_resizer:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 300M
+        reservations:
+          memory: 100M
+    container_name: ph_image_resizer
+    build:
+      context: ./scripts/storage/minio-image-resizer
+    depends_on:
+      - storage-client
+    environment:
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_PORT=${MINIO_PORT}
+      - MINIO_SECURITY=${MINIO_SECURITY}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_RESIZER_SOURCE=${MINIO_BUCKET}
+      - MINIO_RESIZER_DESTINATION=${MINIO_RESIZER_DESTINATION}
+      - MINIO_RESIZER_MAX_WIDTH=${MINIO_RESIZER_MAX_WIDTH}
+      - MINIO_RESIZER_MAX_HEIGHT=${MINIO_RESIZER_MAX_HEIGHT}
+    networks:
+      - ph-net
+    restart: always
+
+  grafana:
+    image: grafana/grafana:6.7.3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 500M
+        reservations:
+          memory: 250M
+    container_name: ph_grafana
+    build:
+      context: ./grafana
+    ports:
+      - '${GRAFANA_PORT}:${GRAFANA_PORT}'
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_DATABASE_NAME=${DB_NAME}
+      - GF_DATABASE_USER=${POSTGRESQL_USERNAME}
+      - GF_DATABASE_PASSWORD=${POSTGRESQL_PASSWORD}
+      - GF_DATABASE_TYPE=postgres
+      - GF_DATABASE_HOST=${DB_HOST}:${DB_PORT}
+      - GF_DATABASE_MAX_OPEN_CONN=300
+      - GF_SSL_MODE=disable
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    depends_on:
+      - db-0
+    networks:
+      - ph-net
+    volumes:
+      - './scripts/grafana/provisioning:/etc/grafana/provisioning'
+      - './scripts/grafana/dashboards:/var/lib/grafana/dashboards'
+      - 'grafana-data:/var/lib/grafana'
+    restart: always
+
+networks:
+  ph-net:
+    name: ph_ph-net
+    driver: bridge

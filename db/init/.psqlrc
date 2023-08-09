@@ -1,0 +1,26 @@
+\set QUIET ON
+
+\set HISTFILE ~/.psql_history_:DBNAME
+\set HISTCONTROL ignoredups
+\set HISTSIZE 2000
+\set COMP_KEYWORD_CASE upper
+
+\pset linestyle unicode
+\pset border 2
+\pset null '[NULL]'
+\pset pager off
+\pset format wrapped
+\timing
+\encoding unicode
+\unset QUIET
+
+-- load some variables from the env
+\setenv base_dir :DIR
+\set base_dir `if [ $base_dir != ":"DIR ]; then echo $base_dir; else echo "/docker-entrypoint-initdb.d"; fi`
+\set anonymous `echo $DB_ANON_ROLE`
+\set authenticator `echo $DB_USER`
+\set authenticator_pass `echo $DB_PASS`
+\set jwt_secret `echo $JWT_SECRET`
+\set quoted_jwt_secret '\'' :jwt_secret '\''
+\set db_env '\''`echo $NODE_ENV`'\''
+\set db_schema '\''`echo $DB_SCHEMA`'\''

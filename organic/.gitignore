@@ -1,0 +1,11 @@
+.DS_Store
+.bak
+.next
+node_modules/
+npm-debug.log
+yarn-error.log
+
+.vscode/
+.idea/
+secrets.hjson
+secret.js

@@ -1,0 +1,64 @@
+---
+# Delete jobs that are 3 or more days old
+# https://stackoverflow.com/questions/48934491/kubernetes-how-to-delete-pods-based-on-age-creation-time
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: job-cleanup
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+spec:
+  schedule: "0 0 * * *"
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        {{- if .Values.cleanup.job.imagePullSecret }}
+        imagePullSecrets:
+        - name: {{ .Values.cleanup.job.imagePullSecret }}
+        {{- else }}
+        {{ end -}}
+        spec:
+          serviceAccountName: job-cleanup
+          containers:
+          - name: kubectl-runner
+            image: {{ .Values.cleanup.job.containers.kubectlRunner.repository }}{{ .Values.cleanup.job.containers.kubectlRunner.image }}:{{ .Values.cleanup.job.containers.kubectlRunner.tag }}
+            securityContext:
+              allowPrivilegeEscalation: false
+            command: ["sh", "-c"]
+            args:
+              - kubectl delete job --namespace={{ .Values.migrateEnvVars.cicdNamespace }} $(kubectl get job --namespace={{ .Values.migrateEnvVars.cicdNamespace }} | grep backup | awk 'match($4,/^3d/) {print $1}')
+          restartPolicy: Never
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: job-cleanup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: job-cleanup
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+rules:
+  - apiGroups: [batch]
+    resources:
+      - jobs
+    verbs:
+      - get
+      - list
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: job-cleanup
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+subjects:
+  - kind: ServiceAccount
+    name: job-cleanup
+    namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+roleRef:
+  kind: Role
+  name: job-cleanup
+  apiGroup: rbac.authorization.k8s.io

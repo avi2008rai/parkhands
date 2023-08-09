@@ -1,0 +1,128 @@
+---
+# Use this playbook to provision a single server with Docker and Node.js.
+# OS is Ubuntu 18.04.
+- hosts: all
+  remote_user: root
+  vars:
+    create_user: node
+    home_dir: "/home/{{ create_user }}"
+    copy_local_key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa.pub') }}"
+    sys_packages: ["curl", "vim", "git", "ufw", "sudo", "fail2ban"]
+  tasks:
+    # User creation related tasks
+    - name: Install required system packages
+      apt: name={{ sys_packages }} state=present update_cache=yes
+
+    - name: Make sure we have a 'wheel' group
+      group:
+        name: wheel
+        state: present
+
+    - name: Allow 'wheel' group to have passwordless sudo
+      lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: "^%wheel"
+        line: "%wheel ALL=(ALL) NOPASSWD: ALL"
+        validate: "/usr/sbin/visudo -cf %s"
+
+    - name: Create a new regular user with sudo privileges
+      user:
+        name: "{{ create_user }}"
+        state: present
+        groups: wheel
+        append: true
+        create_home: true
+        shell: /bin/bash
+
+    - name: Set authorized key for remote user
+      authorized_key:
+        user: "{{ create_user }}"
+        state: present
+        key: "{{ copy_local_key }}"
+
+    # SSH & Firewall configuration
+    - name: Generate SSH key pair
+      openssh_keypair:
+        path: "{{ home_dir }}/.ssh/id_rsa"
+
+    - name: Get private ssh key
+      fetch:
+        src: "{{ home_dir }}/.ssh/id_rsa"
+        dest: "./server-keys/{{ create_user }}_id_rsa"
+        flat: yes
+
+    - name: Disable password authentication for root
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        state: present
+        regexp: "^#?PermitRootLogin"
+        line: "PermitRootLogin prohibit-password"
+      notify:
+        - Restart SSH
+
+    - name: UFW - Allow SSH connections
+      ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: Allow all access to tcp port 80 and 443
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "80"
+        - "443"
+
+    - name: UFW - Deny all other incoming traffic by default
+      ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+
+    # Install Docker
+    - name: Install Docker and docker-compose
+      include_role:
+        name: "nickjj.docker"
+      vars:
+        docker__edition: "ce"         # community edition
+        docker__channel: ["stable"]
+        docker__version: ""           # latest
+        docker__state: "present"      # running this role in the future won't install newer versions (if available)
+        docker__compose_version: ""   # latest
+        docker__users: ["{{ create_user }}"]
+
+
+    # Install Node.js
+    - name: Install Node.js
+      include_role:
+        name: "geerlingguy.nodejs"
+      vars:
+        nodejs_version: "12.x"
+        nodejs_install_npm_user: "{{ create_user }}"
+        nodejs_npm_global_packages: []
+
+    # Set some tweaks to bash
+    - name: Check whether bashrc contains color prompt.
+      command: grep -Fxq "# Color syntax" /root/.bashrc
+      register: bashrc_color
+      check_mode: No
+      ignore_errors: True
+      failed_when: False
+      changed_when: False
+
+    - name: Setup color prompt.
+      shell: "{{ item }}"
+      with_items:
+      - echo "# Color syntax" >> /root/.bashrc
+      - echo "export PS1='\[\033[01;31m\]\u\[\033[01;33m\]@\[\033[01;36m\]\h \[\033[01;33m\]\w \[\033[01;35m\]\$ \[\033[00m\]'" >> /root/.bashrc
+      - echo "# Color syntax" >> /home/{{ create_user }}/.bashrc
+      - echo "export PS1='\[\033[01;31m\]\u\[\033[01;33m\]@\[\033[01;36m\]\h \[\033[01;33m\]\w \[\033[01;35m\]\$ \[\033[00m\]'" >> /home/{{ create_user }}/.bashrc
+      when: bashrc_color.rc != 0
+
+  handlers:
+    - name: Restart SSH
+      shell: sleep 3; service ssh restart
+      async: 1
+      poll: 0

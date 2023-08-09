@@ -1,0 +1,80 @@
+---
+#FIXME graphql api tests are currently failing due to problems with the backup
+#      so for now, require to enable them explicitly
+{{- if (eq .Values.tests.apiTests "enabled") }}
+# - if not (eq .Values.migrateEnvVars.cicdNamespace "production") 
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.migrateEnvVars.cicdExecutionSequence }}-test-api
+  namespace: {{ .Values.migrateEnvVars.cicdTestNamespace }}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      {{- if .Values.containerRegistryPrivate.pullSecret }}
+      imagePullSecrets:
+      - name: {{ .Values.containerRegistryPrivate.pullSecret }}
+      {{- end }}
+      initContainers:
+      - name: git-sync
+        image: {{ .Values.containerRegistryPublic.baseUrl }}alpine/git:v2.24.1
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            cd /workdir
+            git clone --depth 1 https://$GIT_PASSWORD@{{ .Values.migrateEnvVars.gitCloneUrl }} -b {{ .Values.migrateEnvVars.cicdGitBranch }} parkhands
+            cd parkhands
+            git fetch origin {{ .Values.migrateEnvVars.cicdGitRef }}:pr-1
+            git status
+        volumeMounts:
+        - name: git-source
+          mountPath: /workdir
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: password
+      - name: wait-graphql
+        image: {{ .Values.containerRegistryPublic.baseUrl }}radial/busyboxplus:curl
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            until curl -sSf -X POST -H "Content-Type: application/json" --data '{"query": "{ languagesList { name } }"}' ${GRAPHQL_API_URL} > /dev/null; do echo waiting for GraphQL API; sleep 2; done;
+        env:
+        - name: GRAPHQL_API_URL
+          value: http://graphql:5000/graphql
+      containers:
+      - name: ph-test-api
+        image: {{ .Values.containerRegistryPrivate.baseUrl }}ph_graphql:{{ .Values.migrateEnvVars.deployGraphqlImageTag }}
+        imagePullPolicy: IfNotPresent
+        command: ['sh', '-c']
+        args:
+          - |
+            export NODE_ENV=test
+            npx mocha ./test/api/ --config ./test/.mocharc.json
+        envFrom:
+        - configMapRef:
+            name: env-configmap
+        - secretRef:
+            name: env-secrets
+        volumeMounts:
+        - name: git-source
+          mountPath: /app/shared
+          subPath: parkhands/shared
+      restartPolicy: Never
+      volumes:
+      - name: git-source
+        emptyDir: {}
+{{- end }}

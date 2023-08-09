@@ -1,0 +1,118 @@
+# Default values for Parkhands-init.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+#IMPORTANT FIXME apparently the namespace can not be created via helm yet
+
+#was set via CICD_NAMESPACE before!
+resourceNames:
+  configMapName: env-configmap
+  secretName: env-secrets
+
+migrateEnvVars:
+  cicdClusterId: Playground #FIXME
+  cicdProjectId: Parkhands #FIXME
+  rootDomain: parkhands.playground.rg03.diconium.cloud #FIXME!
+  cicdNamespace: staging
+  buildId: fixmeBuildId #FIXME!
+
+#URLs are generated based on environment (migrateEnvVars.cicdNamespace for now) and root domain ( migrateEnvVars.rootDomain) via _helpers.tpl
+#TODO the keys velow do not follow helm guidelines - this should be adjustet WITHOUT breaking compatibility to the .env file
+environmentVariables:
+  GRAPHQL_API_ENDPOINT: /graphql
+  ADMIN_PORT: "1337"
+  CLIENT_PORT: "3777"
+  WIDGET_PORT: "7777"
+  BUILD_ID: fixmeBuildID #FIXME!
+  COMPOSE_PROJECT_NAME: ph
+  DB_ANON_ROLE: app_anonymous
+  DB_HOST: postgresql-ha-pgpool
+  DB_NAME: app
+  #DB_PASS: authenticatorpass
+  DB_PORT: "5432"
+  DB_SCHEMA: api
+  DB_USER: authenticator
+  #GOOGLE_MAPS_API_KEY: AIzaSyDZUJqbtG9Sq5fpGcAprwlNBDU-53jO96k
+  #GRAFANA_ADMIN_PASSWORD: secret
+  GRAFANA_ADMIN_USER: admin
+  GRAFANA_PORT: "3000"
+  #JWT_SECRET: RG9lIiwiYWRtaW4iOnRydWUsImp0aSI6IjVhNjBjZDM3LWZmNTktNGNkYi05ZmQzL #FIXME
+  REST_API_ENDPOINT: /rest
+  REST_API_PORT: "5002"
+  REST_API_PROTOCOL: "https"
+  FILE_API_ENDPOINT: /files
+  FILE_API_PORT: "5001"
+  MINIO_PORT: "9000"
+  #MINIO_ACCESS_KEY: "YQ92355KAEJMS3WS"
+  #MINIO_SECRET_KEY: "p5pZe38Zrh6Pn4sqXytEBekuHh2qGhS9"
+  MINIO_ENDPOINT: "storage"
+  MINIO_SECURITY: "false"
+  MINIO_BUCKET: "files"
+  MINIO_UPLOADS_FOLDER_NAME: "uploads"
+  MINIO_RESIZER_DESTINATION: "thumbnails"
+  MINIO_RESIZER_STARTUP_SYNC: "true"
+  MINIO_RESIZER_MAX_WIDTH: "500"
+  MINIO_RESIZER_MAX_HEIGHT: "500"
+  DATASET_CURRENT_FILENAME: "20200918.json"
+  DATASET_SOURCE_BUCKET: "dataset"
+  DATASET_STATIC_SLOTS_BUCKET: "static-slots"
+  DATASET_STATIC_SPACES_BUCKET: "static-spaces"
+  DATASET_STARTUP_SYNC: "true"
+  NODE_ENV: production
+  NPM_RUN_TARGET: start
+  POSTGRAPHILE_PORT: "5000"
+  POSTGRAPHILE_CORS: "false"
+  POSTGRAPHILE_ALLOW_EXPLAIN: "false"
+  #SENDGRID_API_KEY: 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
+  SENDGRID_FROM_ADDR: contact@parkhands.com
+  POSTGRESQL_USERNAME: postgres
+  #POSTGRESQL_PASSWORD: postgrespass
+  #REPMGR_PASSWORD: repmgrpass
+  REPMGR_USERNAME: repmgr #TODO verify if this is necessary
+  ADMIN_SENTRY_DSN: https://2606ff180eb84da6a53a6ef077669adb@o387531.ingest.sentry.io/5222947
+  CLIENT_SENTRY_DSN: https://13a7e3a038eb4c16b2720532987f04fc@o387531.ingest.sentry.io/5240673
+  ORGANIC_SENTRY_DSN: https://44fb73758a4749bdb992e7fcaebb8349@o387531.ingest.sentry.io/5222949
+  STRIPE_WEBHOOK_ENDPOINT: /payments/stripe
+  STRIPE_WEBHOOK_PORT: "5003"
+  STRIPE_PRICE_ID: price_1GxDgBKYksC71no8xdDAbbcj
+
+
+#FIXME this will default to values for staging
+secrets:
+  dbPass: authenticatorpass
+  googleMapsApiKey: AIzaSyDu-otBgIAGI1_mYHOTJ9J6d-Sce_DeLds
+  gfSecurityAdminPassword: secret
+  jwtSecret: RG9lIiwiYWRtaW4iOnRydWUsImp0aSI6IjVhNjBjZDM3LWZmNTktNGNkYi05ZmQzL
+  postgresqlPassword: postgrespass
+  repmgrPassword: repmgrpass
+  minioAccessKey: FIXME
+  minioSecretKey: FIXME
+  sendgridApiKey: FIXME
+  backupMinioAccessKey: FIXME
+  backupMinioSecretKey: FIXME
+  adminPassword: pgpoolpass
+  stripePublicKey: pk_test_51GvI8cKYksC71no80wxwry41VroEjHTnk8C6fS3BzCYtr3013vjWE1ITZaRtjDR76J971y31dKM05CpPN0qCxJAu00srjdNaa1
+  stripeSecretKey: FIXME
+  stripeWebhookSecret: FIXME
+
+nameOverride: ""
+fullnameOverride: ""
+
+podAnnotations: {}
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

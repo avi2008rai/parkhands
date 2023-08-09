@@ -1,0 +1,67 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: organic
+  name: organic
+  namespace: {{ CICD_TEST_NAMESPACE }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: organic
+  template:
+    metadata:
+      labels:
+        app: organic
+    spec:
+      imagePullSecrets:
+      - name: parkhands-registry-secret
+      initContainers:
+      - name: wait-db
+        image: tmaier/postgresql-client:latest
+        imagePullPolicy: IfNotPresent
+        command: ['sh', '-c', 'until PGPASSWORD=${POSTGRESQL_PASSWORD} psql -h ${DB_HOST} -U ${POSTGRESQL_USERNAME} -d ${DB_NAME}; do echo waiting for db; sleep 2; done;']
+        env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: POSTGRESQL_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+      containers:
+      - name: ph-organic
+        image: {{ REGISTRY_BASE_URL }}/ph_organic:{{ DEPLOY_ORGANIC_IMAGE_TAG }}
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c", "pm2-runtime pm2.config.js --no-autorestart && pm2 logs --lines 1000"]
+        ports:
+        - containerPort: 5001
+        - containerPort: 5002
+        - containerPort: 5003
+        envFrom:
+        - configMapRef:
+            name: env-configmap
+        - secretRef:
+            name: env-secrets
+        resources: {}
+        volumeMounts:
+      restartPolicy: Always
+      volumes:
+status: {}

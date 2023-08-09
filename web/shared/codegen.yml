@@ -1,0 +1,78 @@
+overwrite: true
+schema: 'http://localhost:5000/graphql'
+generates:
+  ../client/gql/schema.tsx:
+    documents: '../{shared,client}/gql/**/*.{ts,tsx}'
+    plugins:
+      - 'time'
+      - add:
+          content:
+            - 'import { GeometryObject } from "geojson"'
+            - 'export type PickArrayType<T> = T extends (infer U)[] ? U : NonNullable<T>'
+            - 'export const crs = { type: "name", properties: { name: "urn:ogc:def:crs:EPSG::4326" } }'
+            - '// Regenerate file by running `npm run graphql-gen-types`'
+      - 'typescript'
+      - 'typescript-operations'
+      - 'typescript-react-apollo'
+      - 'fragment-matcher'
+  ../admin/gql/schema.tsx:
+    documents: '../{shared,admin}/gql/**/*.{ts,tsx}'
+    plugins:
+      - 'time'
+      - add:
+          content:
+            - 'import { GeometryObject } from "geojson"'
+            - 'export type PickArrayType<T> = T extends (infer U)[] ? U : NonNullable<T>'
+            - 'export const crs = { type: "name", properties: { name: "urn:ogc:def:crs:EPSG::4326" } }'
+            - '// Regenerate file by running `npm run graphql-gen-types`'
+      - 'typescript'
+      - 'typescript-operations'
+      - 'typescript-react-apollo'
+      - 'fragment-matcher'
+  ../widget/gql/schema.ts:
+    documents: '../{shared,widget}/gql/**/*.ts'
+    config:
+      rawRequest: true
+    plugins:
+      - 'time'
+      - add:
+          content:
+            - 'import { GeometryObject } from "geojson"'
+            - 'export type PickArrayType<T> = T extends (infer U)[] ? U : NonNullable<T>'
+            - 'export const crs = { type: "name", properties: { name: "urn:ogc:def:crs:EPSG::4326" } }'
+            - '// Regenerate file by running `npm run graphql-gen-types`'
+      - 'typescript'
+      - 'typescript-operations'
+      - 'typescript-graphql-request'
+      - 'fragment-matcher'
+    #   - add: 'declare namespace GraphQL {'
+    #   - add:
+    #       placement: 'append'
+    #       content: '}'
+    # preset: import-types
+    # presetConfig:
+    #   typesPath: 'gql/types'
+config:
+  preResolveTypes: true # Avoids using Pick and resolve the actual primitive type
+  withHooks: true
+  withHOC: false
+  withComponent: false
+  maybeValue: T | null | undefined
+  skipTypename: true
+  # avoidOptionals:
+  #   field: true
+  #   inputValue: true
+  #   object: true
+  scalars:
+    ID: string
+    UUID: string
+    Email: string
+    JwtToken: string
+    Datetime: Date
+    Time: string
+    GeoJSON: GeometryObject
+    JSON: '{ [key: string]: unknown }'
+
+hooks:
+  afterAllFileWrite:
+    - prettier --write

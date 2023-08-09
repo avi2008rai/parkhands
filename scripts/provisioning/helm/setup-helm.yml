@@ -1,0 +1,18 @@
+---
+- hosts: all
+  tasks:
+    - name: Download Helm installer binary.
+      shell: curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > get_helm.sh
+
+    - name: Make the helm install binary executable.
+      shell: chmod 700 get_helm.sh
+
+    - name: Run executable to download v3.1.2
+      remote_user: root
+      shell: ./get_helm.sh -v v3.1.2
+
+    - name: Test to ensure the version you installed is up-to-date.
+      shell: helm version
+
+    - name: Remove installation file
+      shell: rm ./get_helm.sh

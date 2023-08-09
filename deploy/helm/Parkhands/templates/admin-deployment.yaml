@@ -1,0 +1,154 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: admin
+  name: admin
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+spec:
+  replicas: {{ .Values.admin.deployment.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: admin
+  template:
+    metadata:
+      {{ if not (eq .Values.migrateEnvVars.cicdNamespace "production") }}
+      annotations:
+        gitCommitHash: {{ .Values.migrateEnvVars.cicdGitCommit | quote }}
+      {{ end }}
+      labels:
+        app: admin
+    spec:
+      {{- if .Values.admin.deployment.imagePullSecret }}
+      imagePullSecrets:
+      - name: {{ .Values.admin.deployment.imagePullSecret }}
+      {{ else -}}
+      {{- end -}}
+      initContainers:
+      - name: wait-graphql
+        image: {{ .Values.admin.deployment.initContainers.waitGraphql.repository }}{{ .Values.admin.deployment.initContainers.waitGraphql.image }}:{{ .Values.admin.deployment.initContainers.waitGraphql.tag }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            until curl -sSf -X POST -H "Content-Type: application/json" --data '{"query": "{ languagesList { name } }"}' ${GRAPHQL_API_URL} > /dev/null; do echo waiting for GraphQL API; sleep 2; done;
+        env:
+        - name: GRAPHQL_API_URL
+          value: http://graphql:5000/graphql
+      containers:
+      - name: ph-admin
+        image: {{ .Values.admin.deployment.containers.phAdmin.repository }}{{ .Values.admin.deployment.containers.phAdmin.image }}:{{ .Values.migrateEnvVars.deployAdminImageTag }}
+        imagePullPolicy: {{ .Values.admin.deployment.containers.phAdmin.imagePullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        ports:
+        - containerPort: 1337
+        env:
+        - name: GRAPHQL_API_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAPHQL_API_ENDPOINT
+        - name: GRAPHQL_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAPHQL_API_URL
+        - name: GRAPHQL_WS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAPHQL_WS_URL
+        - name: ADMIN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: ADMIN_URL
+        - name: ADMIN_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: ADMIN_PORT
+        - name: CLIENT_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: CLIENT_URL
+        - name: CLIENT_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: CLIENT_PORT
+        - name: WIDGET_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: WIDGET_URL
+        - name: CDN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: CDN_URL
+        - name: FILE_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: FILE_API_URL
+        - name: FILE_API_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: FILE_API_ENDPOINT
+        - name: BUILD_ID
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: BUILD_ID
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NODE_ENV
+        - name: NPM_RUN_TARGET
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NPM_RUN_TARGET
+        - name: GOOGLE_MAPS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: GOOGLE_MAPS_API_KEY
+        livenessProbe:
+          tcpSocket:
+            port: 1337
+          initialDelaySeconds: {{ .Values.admin.deployment.containers.phAdmin.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.admin.deployment.containers.phAdmin.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.admin.deployment.containers.phAdmin.livenessProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.admin.deployment.containers.phAdmin.livenessProbe.successThreshold }}
+          failureThreshold: {{ .Values.admin.deployment.containers.phAdmin.livenessProbe.failureThreshold }}
+        readinessProbe:
+          tcpSocket:
+            port: 1337
+          initialDelaySeconds: {{ .Values.admin.deployment.containers.phAdmin.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.admin.deployment.containers.phAdmin.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.admin.deployment.containers.phAdmin.readinessProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.admin.deployment.containers.phAdmin.readinessProbe.successThreshold }}
+          failureThreshold: {{ .Values.admin.deployment.containers.phAdmin.readinessProbe.failureThreshold }}
+        resources:
+          requests:
+            cpu: {{ .Values.admin.deployment.containers.phAdmin.resources.requests.cpu }}
+            memory: {{ .Values.admin.deployment.containers.phAdmin.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.admin.deployment.containers.phAdmin.resources.limits.cpu }}
+            memory: {{ .Values.admin.deployment.containers.phAdmin.resources.limits.memory }}
+        workingDir: /web/admin
+      restartPolicy: Always
+status: {}

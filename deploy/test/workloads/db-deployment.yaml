@@ -1,0 +1,178 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: db
+  name: db
+  namespace: {{ CICD_TEST_NAMESPACE }}
+spec:
+  replicas: 1
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: db
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      imagePullSecrets:
+      - name: parkhands-registry-secret
+      initContainers:
+      - name: git-sync
+        image: alpine/git:v2.24.1
+        command: ['sh', '-c']
+        args:
+          - |
+            cd /workdir
+            git clone --depth 1 {{ GIT_CLONE_URL }} -b {{ CICD_GIT_BRANCH }} parkhands
+            cd parkhands
+            git fetch origin {{ CICD_GIT_REF }}:pr-1
+            git status
+        volumeMounts:
+        - name: git-source
+          mountPath: /workdir
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: password
+      containers:
+      - name: ph-db
+        image: {{ REGISTRY_BASE_URL }}/ph_postgresql-repmgr:{{ DEPLOY_DB_IMAGE_TAG }}
+        imagePullPolicy: IfNotPresent
+        ports:
+          - containerPort: 5432
+        env:
+        - name: POSTGRESQL_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        - name: POSTGRESQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: REPMGR_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: REPMGR_PASSWORD
+        - name: REPMGR_PRIMARY_HOST
+          value: "db-0"
+        - name: REPMGR_PRIMARY_PORT
+          value: "5432"
+        - name: REPMGR_PARTNER_NODES
+          value: "db-0"
+        - name: REPMGR_NODE_NAME
+          value: "db-0"
+        - name: REPMGR_NODE_NETWORK_NAME
+          value: "db-0"
+        - name: REPMGR_PORT_NUMBER
+          value: "5432"
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_USER
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: DB_PASS
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_PORT
+        - name: DB_SCHEMA
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_SCHEMA
+        - name: DB_ANON_ROLE
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_ANON_ROLE
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: JWT_SECRET
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NODE_ENV
+        - name: BITNAMI_DEBUG
+          value: "true"
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - pg_isready -U "${POSTGRESQL_USERNAME}" -d "${DB_NAME}"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - pg_isready -U "${POSTGRESQL_USERNAME}" -d "${DB_NAME}"
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        resources: {}
+        volumeMounts:
+        - name: git-source
+          mountPath: /docker-entrypoint-initdb.d
+          subPath: parkhands/db/init
+        - name: git-source
+          mountPath: /opt/bitnami/postgresql/conf/conf.d
+          subPath: parkhands/db/conf.d
+        - name: git-source
+          mountPath: /root/.psqlrc
+          subPath: parkhands/db/init/.psqlrc
+      restartPolicy: Always
+      volumes:
+      - name: git-source
+        emptyDir: {}
+status:
+  replicas: 1

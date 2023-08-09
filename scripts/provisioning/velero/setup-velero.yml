@@ -1,0 +1,15 @@
+---
+- hosts: all
+  tasks:
+    - name: Download Velero CLI binary.
+      shell: wget https://github.com/vmware-tanzu/velero/releases/download/v1.3.2/velero-v1.3.2-linux-amd64.tar.gz
+
+    - name: Extract the tarball.
+      shell: tar -xvf ./velero-v1.3.2-linux-amd64.tar.gz
+
+    - name: Make the velero install binary executable.
+      shell: chmod +x ./velero-v1.3.2-linux-amd64/velero
+
+    - name: Move the binary in to your PATH.
+      remote_user: root
+      shell: mv ./velero-v1.3.2-linux-amd64/velero /usr/local/bin/velero

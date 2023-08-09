@@ -1,0 +1,39 @@
+---
+# - name: Add backup annotation for postgresql
+#   k8s:
+#     definition:
+#       api_version: v1
+#       kind: Pod
+#       metadata:
+#         name: db-0
+#         namespace: production
+#         annotations:
+#           backup.velero.io/backup-volumes: postgres-data
+#     state: present
+#     kubeconfig: "{{ kubeconfig_path }}"
+#
+# - name: Add backup annotation for storage
+#   k8s:
+#     definition:
+#       api_version: v1
+#       kind: Pod
+#       metadata:
+#         name: storage-0
+#         namespace: production
+#         annotations:
+#           backup.velero.io/backup-volumes: storage-data
+#     state: present
+#     kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create backup on production namespace
+  shell: |
+    velero backup create production-backup \
+        --include-namespaces production \
+        --kubeconfig="{{ kubeconfig_path }}"
+
+- name: Create schedule to backup daily production namespace
+  shell: |
+    velero schedule create production-daily \
+        --schedule="0 1 * * *" \
+        --include-namespaces production \
+        --kubeconfig="{{ kubeconfig_path }}"

@@ -1,0 +1,23 @@
+---
+- hosts: all
+
+  vars_files:
+    - default.config.yml
+
+  pre_tasks:
+    - name: Define config_dir.
+      set_fact:
+        config_dir: "{{ playbook_dir }}"
+      when: config_dir is not defined
+      tags: ['always']
+
+    - include_vars: "{{ item }}"
+      with_fileglob:
+        - "{{ config_dir }}/config.yml"
+        - "{{ config_dir }}/environments/{{ lookup('env', 'ENV_NAME')|default(env_name, true)|default(ansible_env.ENV_NAME)|default(omit) }}/group_vars/all/vars.yml"
+      tags: ['always']
+
+  tasks:
+
+    - include: tasks/velero/setup-production-backup.yml
+    - include: tasks/domain/setup-ingress-parkhands-de-redirect.yml

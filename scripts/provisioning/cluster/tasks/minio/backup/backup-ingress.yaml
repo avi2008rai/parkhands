@@ -1,0 +1,27 @@
+---
+kind: Ingress
+apiVersion: extensions/v1beta1
+metadata:
+  name: backup
+  namespace: backup
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/acme-challenge-type: http01
+    cert-manager.io/cluster-issuer: "letsencrypt-production"
+    nginx.ingress.kubernetes.io/app-root: /minio
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+spec:
+  tls:
+  - hosts:
+    - backup-mirror.parkhands.com
+    secretName: parkhands-backup-mirror-tls
+  rules:
+    - host: backup-mirror.parkhands.com
+      http:
+        paths:
+          - backend:
+              serviceName: backup
+              servicePort: 9000
+            path: /

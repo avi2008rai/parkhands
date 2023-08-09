@@ -1,0 +1,15 @@
+---
+loki:
+  enabled: true
+
+promtail:
+  enabled: false
+
+fluent-bit:
+  enabled: true
+
+grafana:
+  enabled: false
+
+prometheus:
+  enabled: false

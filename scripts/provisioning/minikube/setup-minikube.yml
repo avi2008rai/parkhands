@@ -1,0 +1,22 @@
+---
+- hosts: all
+  tasks:
+    - name: Download and install minikube to /usr/local/bin.
+      remote_user: root
+      shell: curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 \
+             && install minikube-linux-amd64 /usr/local/bin/minikube
+
+    - name: Verify that your system has virtualization support enabled.
+      shell: egrep -q 'vmx|svm' /proc/cpuinfo && echo yes || echo no
+
+    - name: Make virtualbox the default driver.
+      shell: minikube config set vm-driver virtualbox
+
+    - name: Increase memory allocation.
+      shell: minikube config set memory 4096
+
+    - name: Test to ensure the version you installed is up-to-date.
+      shell: minikube version
+
+    - name: Remove installation file
+      shell: rm minikube-linux-amd64

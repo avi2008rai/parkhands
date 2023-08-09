@@ -1,0 +1,73 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ CICD_EXECUTION_SEQUENCE }}-test-api
+  namespace: {{ CICD_TEST_NAMESPACE }}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      imagePullSecrets:
+      - name: parkhands-registry-secret
+      initContainers:
+      - name: git-sync
+        image: alpine/git:v2.24.1
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            cd /workdir
+            git clone --depth 1 {{ GIT_CLONE_URL }} -b {{ CICD_GIT_BRANCH }} parkhands
+            cd parkhands
+            git fetch origin {{ CICD_GIT_REF }}:pr-1
+            git status
+        volumeMounts:
+        - name: git-source
+          mountPath: /workdir
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: password
+      - name: wait-graphql
+        image: radial/busyboxplus:curl
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            until curl -sSf -X POST -H "Content-Type: application/json" --data '{"query": "{ languagesList { name } }"}' ${GRAPHQL_API_URL} > /dev/null; do echo waiting for GraphQL API; sleep 2; done;
+        env:
+        - name: GRAPHQL_API_URL
+          value: http://graphql:5000/graphql
+      containers:
+      - name: ph-test-api
+        image: {{ REGISTRY_BASE_URL }}/ph_graphql:{{ DEPLOY_GRAPHQL_IMAGE_TAG }}
+        imagePullPolicy: IfNotPresent
+        command: ['sh', '-c']
+        args:
+          - |
+            export NODE_ENV=test
+            npx mocha ./test/api/ --config ./test/.mocharc.json
+        envFrom:
+        - configMapRef:
+            name: env-configmap
+        - secretRef:
+            name: env-secrets
+        volumeMounts:
+        - name: git-source
+          mountPath: /app/shared
+          subPath: parkhands/shared
+      restartPolicy: Never
+      volumes:
+      - name: git-source
+        emptyDir: {}

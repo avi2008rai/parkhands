@@ -1,0 +1,29 @@
+---
+- name: Create loki namespace
+  k8s:
+    definition:
+      api_version: v1
+      kind: Namespace
+      metadata:
+        name: loki
+        labels:
+          name: loki
+        annotations:
+          field.cattle.io/projectId: "{{ cluster_id }}:{{ project_system_id }}"
+      spec:
+        finalizers:
+          - kubernetes
+      status:
+        phase: Active
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Install loki-stack using helm chart
+  shell: |
+    helm repo add loki https://grafana.github.io/loki/charts --kubeconfig="{{ kubeconfig_path }}"
+    helm repo update --kubeconfig="{{ kubeconfig_path }}"
+
+    helm upgrade --install loki loki/loki-stack \
+      --namespace=loki \
+      --kubeconfig="{{ kubeconfig_path }}" \
+      -f {{ playbook_dir }}/tasks/loki/values.yaml

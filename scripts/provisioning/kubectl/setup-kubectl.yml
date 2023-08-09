@@ -1,0 +1,15 @@
+---
+- hosts: all
+  tasks:
+    - name: Download v1.17.3 release of kubectl.
+      shell: curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.17.3/bin/linux/amd64/kubectl
+
+    - name: Make the kubectl binary executable.
+      shell: chmod +x ./kubectl
+
+    - name: Move the binary in to your PATH.
+      remote_user: root
+      shell: mv ./kubectl /usr/local/bin/kubectl
+
+    - name: Test to ensure the version you installed is up-to-date.
+      shell: kubectl version

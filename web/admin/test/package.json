@@ -1,0 +1,15 @@
+{
+  "name": "web-ui-test",
+  "description": "Parkhands Admin UI Tests",
+  "scripts": {
+    "test": "cypress run --record false",
+    "test-dev": "cypress open"
+  },
+  "dependencies": {
+    "cypress-react-unit-test": "4.1.5",
+    "typescript": "3.9.3"
+  },
+  "devDependencies": {
+    "cypress": "4.5.0"
+  }
+}

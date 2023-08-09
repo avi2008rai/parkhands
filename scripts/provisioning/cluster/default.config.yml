@@ -1,0 +1,27 @@
+
+# Kubernetes
+kubeconfig_path:
+kubeconfig_secret:
+
+# Rancher
+rancher_api_url:
+rancher_access_key:
+rancher_secret_key:
+rancher_token:
+cluster_id:
+project_default_id:
+project_system_id:
+
+# Github credentials
+github_secret:
+github_ssh:
+github_known_hosts:
+
+# Docker registry credentials
+docker_registry_secret:
+docker_registry_url:
+docker_registry_username:
+docker_registry_password:
+
+# Cert-Manager
+certmanager_version: 'v0.15.0'

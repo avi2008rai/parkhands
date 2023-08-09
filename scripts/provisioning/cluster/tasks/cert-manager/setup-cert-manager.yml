@@ -1,0 +1,32 @@
+---
+- name: Create cert-manager namespace
+  k8s:
+    name: cert-manager
+    api_version: v1
+    kind: Namespace
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+
+- name: Install cert-manager
+  k8s:
+    definition: '{{ item }}'
+    namespace: cert-manager
+    kubeconfig: "{{ kubeconfig_path }}"
+  with_items: '{{ lookup("url", "https://github.com/jetstack/cert-manager/releases/download/{{ certmanager_version }}/cert-manager.yaml", split_lines=False) | from_yaml_all | list }}'
+  when: item is not none
+
+- name: Wait 5min for resources to be created
+  pause:
+    minutes: 5
+
+- name: Create ClusterIssuer for letsencrypt-production
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/cert-manager/clusterissuers/production-issuer.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create ClusterIssuer for letsencrypt-staging
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/cert-manager/clusterissuers/staging-issuer.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"

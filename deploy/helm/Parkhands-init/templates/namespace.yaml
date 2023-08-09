@@ -1,0 +1,15 @@
+#FIXME the namespace must be created manually
+#---
+#apiVersion: v1
+#kind: Namespace
+#metadata:
+#  name: {{ .Values.migrateEnvVars.cicdNamespace }}
+#  labels:
+#    name: {{ .Values.migrateEnvVars.cicdNamespace }}
+#  annotations:
+#    field.cattle.io/projectId: {{ .Values.migrateEnvVars.cicdClusterId }}:{{ .Values.migrateEnvVars.cicdProjectId }}
+#spec:
+#  finalizers:
+#    - kubernetes
+#status:
+#  phase: Active

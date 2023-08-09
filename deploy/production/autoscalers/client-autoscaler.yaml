@@ -1,0 +1,26 @@
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: client-autoscaler
+  namespace: {{ CICD_NAMESPACE }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1beta2
+    kind: Deployment
+    name: client
+  minReplicas: 4
+  maxReplicas: 8
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageValue: 1000m
+        type: AverageValue
+    type: Resource
+  # - resource:
+  #     name: memory
+  #     target:
+  #       averageUtilization: 80
+  #       type: Utilization
+  #   type: Resource

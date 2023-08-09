@@ -1,0 +1,60 @@
+---
+plugins:
+  enabled: true
+  pluginsList:
+    - fluent-plugin-s3
+    - fluent-plugin-rewrite-tag-filter
+
+service:
+  annotations: {}
+  type: ClusterIP
+  ports:
+    - name: "monitor-agent"
+      protocol: TCP
+      containerPort: 24220
+    - name: "forward"
+      protocol: TCP
+      containerPort: 24224
+
+configMaps:
+  output.conf: |
+    <filter kube.**>
+       @type record_transformer
+       enable_ruby
+       <record>
+         kubernetes_namespace ${"%s" % [record["kubernetes"]["namespace_name"] || "unspecified-namespace"]}
+         kubernetes_tag ${"%s" % [record["kubernetes"]["labels"]["app"] || record["kubernetes"]["labels"]["k8s-app"] || record["kubernetes"]["labels"]["name"] || record["kubernetes"]["labels"]["app.kubernetes.io/name"] || record["kubernetes"]["labels"]["job-name"] || "unspecified-app-label"]}
+         kubernetes_pod ${record["kubernetes"]["pod_name"]}
+       </record>
+    </filter>
+    <match **test**>
+      @type null
+    </match>
+    <match {**staging**,**production**,**ingress-nginx**}>
+       @type s3
+       aws_key_id 55NAuaF83nQa
+       aws_sec_key JPGa8ZaPwm9j7TE7
+       s3_bucket logs
+       s3_endpoint http://backup.backup.svc.cluster.local:9000
+       s3_region minio
+       s3_object_key_format "%{path}/${kubernetes_namespace}.${kubernetes_tag}.${kubernetes_pod}-%{time_slice}-logs_%{index}.%{file_extension}"
+       time_slice_format %Y%m%d%H%M  # This timestamp is added to each file name
+       path %Y/%m/%d/${kubernetes_namespace}
+       force_path_style true   # This prevents AWS SDK from breaking endpoint URL
+       # if you want to use ${tag} or %Y/%m/%d/ like syntax in path / s3_object_key_format,
+       # need to specify tag for ${tag} and time for %Y/%m/%d in <buffer> argument.
+       <buffer tag,time,kubernetes_tag,kubernetes_namespace,kubernetes_pod,stream>
+         @type file
+         path /var/log/td-agent/s3
+         timekey 60m            # Flush the accumulated chunks every hour
+         timekey_wait 1m        # Wait for 60 seconds before flushing
+         timekey_use_utc true   # Use this option if you prefer UTC timestamps
+         chunk_limit_size 256m  # The maximum size of each chunk
+       </buffer>
+       <format>
+         @type json
+       </format>
+    </match>
+    <match **>
+      @type null
+    </match>

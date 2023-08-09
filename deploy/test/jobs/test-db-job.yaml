@@ -1,0 +1,86 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ CICD_EXECUTION_SEQUENCE }}-test-db
+  namespace: {{ CICD_TEST_NAMESPACE }}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      initContainers:
+      - name: git-sync
+        image: alpine/git:v2.24.1
+        command: ['sh', '-c']
+        args:
+          - |
+            cd /workdir
+            git clone --depth 1 {{ GIT_CLONE_URL }} -b {{ CICD_GIT_BRANCH }} parkhands
+            cd parkhands
+            git fetch origin {{ CICD_GIT_REF }}:pr-1
+            git status
+        volumeMounts:
+        - name: git-source
+          mountPath: /workdir
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: password
+      - name: wait-graphql
+        image: radial/busyboxplus:curl
+        command: ['sh', '-c']
+        args:
+          - |
+            until curl -sSf -X POST -H "Content-Type: application/json" --data '{"query": "{ languagesList { name } }"}' ${GRAPHQL_API_URL} > /dev/null; do echo waiting for GraphQL API; sleep 2; done;
+        env:
+        - name: GRAPHQL_API_URL
+          value: http://graphql:5000/graphql
+      containers:
+      - name: ph-test-db
+        image: horrendo/pg_prove:latest
+        imagePullPolicy: IfNotPresent
+        command: ['sh', '-c', 'pg_prove *.sql']
+        env:
+        - name: DB_ENV
+          value: {{ CICD_GIT_BRANCH }}
+        - name: PGHOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: PGDATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: PGUSER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NODE_ENV
+        volumeMounts:
+        - name: git-source
+          mountPath: /tmp
+          subPath: parkhands/db/migrations/test
+      restartPolicy: Never
+      volumes:
+      - name: git-source
+        emptyDir: {}

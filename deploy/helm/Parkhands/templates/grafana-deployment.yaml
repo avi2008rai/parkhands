@@ -1,0 +1,217 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: grafana
+  name: grafana
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+spec:
+  replicas: 1
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: grafana
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+      annotations:
+        backup.velero.io/backup-volumes: grafana-data
+        {{ if not (eq .Values.migrateEnvVars.cicdNamespace "production") }}
+        gitCommitHash: {{ .Values.migrateEnvVars.cicdGitCommit | quote }}
+        {{ end }}
+    spec:
+      #FIXME logic to include pullSecrets if they are present is currently not working
+      initContainers:
+      - name: git-sync
+        image: {{ .Values.grafana.deployment.initContainers.gitSync.repository }}{{ .Values.grafana.deployment.initContainers.gitSync.image }}:{{ .Values.grafana.deployment.initContainers.gitSync.tag }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            cd /workdir
+            git clone --depth 1 https://$GIT_PASSWORD@{{ .Values.migrateEnvVars.gitCloneUrl }} -b {{ .Values.migrateEnvVars.cicdGitBranch }} parkhands
+            cd parkhands
+            git fetch origin {{ .Values.migrateEnvVars.cicdGitRef }}:pr-1
+            git status
+        volumeMounts:
+        - name: git-source
+          mountPath: /workdir
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: password
+      - name: setup-grafana-conf
+        image: {{ .Values.grafana.deployment.initContainers.setupGrafanaConf.repository }}{{ .Values.grafana.deployment.initContainers.setupGrafanaConf.image }}:{{ .Values.grafana.deployment.initContainers.setupGrafanaConf.tag }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            sed -i s^postgrespass^"${POSTGRESQL_PASSWORD}^g" /etc/grafana/provisioning/datasources/datasources.yaml
+            sed -i s^db-0^"postgresql-ha-pgpool^g" /etc/grafana/provisioning/datasources/datasources.yaml
+        env:
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        volumeMounts:
+        - name: git-source
+          mountPath: /etc/grafana/provisioning/datasources
+          subPath: parkhands/scripts/grafana/provisioning/datasources
+      - name: wait-db
+        image: {{ .Values.grafana.deployment.initContainers.waitDb.repository }}{{ .Values.grafana.deployment.initContainers.waitDb.image }}:{{ .Values.grafana.deployment.initContainers.waitDb.tag }}
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'until PGPASSWORD=${POSTGRESQL_PASSWORD} psql -h ${DB_HOST} -U ${POSTGRESQL_USERNAME} -d ${DB_NAME}; do echo waiting for db; sleep 2; done;']
+        env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: POSTGRESQL_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+      - name: init-chown-data
+        #its the same image and version as for setup-grafana-conf
+        image: {{ .Values.grafana.deployment.initContainers.setupGrafanaConf.repository }}{{ .Values.grafana.deployment.initContainers.setupGrafanaConf.image }}:{{ .Values.grafana.deployment.initContainers.setupGrafanaConf.tag }}
+        imagePullPolicy: {{ .Values.grafana.deployment.containers.phGrafana.imagePullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsUser: 0
+        command: ["chown", "-R", "472:472", "/var/lib/grafana"]
+        volumeMounts:
+          - name: grafana-data
+            mountPath: "/var/lib/grafana"
+      securityContext: 
+      containers:
+      - name: ph-grafana
+        image: {{ .Values.grafana.deployment.containers.phGrafana.repository }}{{ .Values.grafana.deployment.containers.phGrafana.image }}:{{ .Values.grafana.deployment.containers.phGrafana.tag }}
+        imagePullPolicy: IfNotPresent
+        ports:
+          - containerPort: 3000
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsUser: 472
+        env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_USER
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: GF_DATABASE_HOST
+          value: postgresql-ha-pgpool:5432
+        - name: GF_DATABASE_MAX_OPEN_CONN
+          value: "300"
+        - name: GF_DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: GF_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAFANA_PORT
+        - name: GF_DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        - name: GF_DATABASE_TYPE
+          value: postgres
+        - name: GF_DATABASE_USER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        - name: GF_INSTALL_PLUGINS
+          value: grafana-clock-panel,grafana-simple-json-datasource
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: GF_SECURITY_ADMIN_PASSWORD
+        - name: GF_SECURITY_ADMIN_USER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAFANA_ADMIN_USER
+        - name: GF_SSL_MODE
+          value: disable
+        livenessProbe:
+          tcpSocket:
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        readinessProbe:
+          tcpSocket:
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        resources: {}
+        volumeMounts:
+        - mountPath: /var/lib/grafana
+          name: grafana-data
+        - name: git-source
+          mountPath: /etc/grafana/provisioning
+          subPath: parkhands/scripts/grafana/provisioning
+        - name: git-source
+          mountPath: /var/lib/grafana/dashboards
+          subPath: parkhands/scripts/grafana/dashboards
+      restartPolicy: Always
+      volumes:
+      - name: git-source
+        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: grafana-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: {{ .Values.grafana.deployment.containers.phGrafana.dataVolumeSize }}
+status:
+  replicas: 1

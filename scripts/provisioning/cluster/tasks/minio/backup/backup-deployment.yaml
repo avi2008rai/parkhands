@@ -1,0 +1,74 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: backup
+  name: backup
+  namespace: backup
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: backup
+  template:
+    metadata:
+      labels:
+        app: backup
+    spec:
+      containers:
+      - name: ph-backup
+        image: minio/minio:RELEASE.2020-04-04T05-39-31Z
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+          - mkdir -p /storage/logs;
+            mkdir -p /storage/velero;
+            mkdir -p /storage/postgresql/postgresql-backups;
+            /usr/bin/minio server /storage;
+        ports:
+          - containerPort: 9000
+        env:
+        - name: MINIO_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: backup-configmap
+              key: MINIO_PORT
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: backup-secrets
+              key: MINIO_ACCESS_KEY
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: backup-secrets
+              key: MINIO_SECRET_KEY
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          periodSeconds: 60
+          failureThreshold: 30
+          initialDelaySeconds: 5
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          periodSeconds: 60
+          failureThreshold: 30
+          initialDelaySeconds: 5
+          timeoutSeconds: 5
+        resources: {}
+        volumeMounts:
+        - name: backup-data
+          mountPath: /storage
+      restartPolicy: Always
+      volumes:
+      - name: backup-data
+        persistentVolumeClaim:
+          claimName: backup-data
+status: {}

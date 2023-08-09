@@ -1,0 +1,27 @@
+---
+kind: Ingress
+apiVersion: extensions/v1beta1
+metadata:
+  name: monitor
+  namespace: {{ CICD_TEST_NAMESPACE }}
+  annotations:
+    kubernetes.io/ingress.class: nginx-external
+    kubernetes.io/tls-acme: "true"
+    cert-manager.io/cluster-issuer: dico-clusterissuer
+    kubernetes.io/ingress.allow-http: "false"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    # cert-manager.io/acme-challenge-type: http01
+    # cert-manager.io/cluster-issuer: "letsencrypt-production"
+spec:
+  tls:
+  - hosts:
+    - monitor.{{ CICD_GIT_BRANCH }}.k8s.{{ ROOT_DOMAIN }}
+    secretName: parkhands-monitor-{{ CICD_GIT_BRANCH }}-tls
+  rules:
+    - host: monitor.{{ CICD_GIT_BRANCH }}.k8s.{{ ROOT_DOMAIN }}
+      http:
+        paths:
+          - backend:
+              serviceName: grafana
+              servicePort: 3000
+            path: /

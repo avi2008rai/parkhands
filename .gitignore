@@ -1,0 +1,35 @@
+TODO
+
+.DS_Store
+.bak
+.next
+node_modules/
+npm-debug.log
+yarn-error.log
+sql-dumps/
+schema/
+.idea
+
+# env files
+.env
+*.env
+!.env.example
+!*.env.example
+.envrc
+
+# SSL certificates
+scripts/provisioning/certbot
+
+## VS Code
+.vscode
+
+# Next.js
+.next
+
+# local/CICD build artifacts
+/.tags
+/.CICD_TEST_NAMESPACE
+/.CICD_NAMESPACE
+/deploy/*/parkhands-test-resources.yaml
+/deploy/*/parkhands-resources.yaml
+/deploy/*/parkhands-initial.yaml

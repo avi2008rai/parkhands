@@ -1,0 +1,115 @@
+nameOverride: "parkhands-backup"
+image:
+  repository: minio/minio
+  tag: RELEASE.2020-11-06T23-17-07Z
+  pullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+#This is refereing to TLS for MinIO server - see https://github.com/minio/charts/tree/master/minio#configure-tls
+tls:
+  enabled: false
+  certSecret: ""
+
+#trustedCertsSecret: ""
+
+ingress:
+  enabled: true
+  labels: {}
+  annotations:
+    kubernetes.io/ingress.class: nginx-external
+    kubernetes.io/tls-acme: "true"
+    cert-manager.io/cluster-issuer: dico-clusterissuer
+    kubernetes.io/ingress.allow-http: "false"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    cert-manager.io/acme-challenge-type: http01
+    cert-manager.io/duration: 2160h  #90days certificate validity
+    cert-manager.io/renew-before: 720h #renew 30 days before validity ends
+    #nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+      - backup.parkhands.playground.rg03.diconium.cloud #FIXME make configurable / derive from env-configmap
+  tls:
+    - hosts:
+      - backup.parkhands.playground.rg03.diconium.cloud #FIXME make configurable / derive from env-configmap
+      secretName: parkhands-backup-tls-secret
+
+mode: standalone
+
+#FIXME TODO accessKey and secretKey MUST be persisted on the level of the project
+#existingSecret: ""
+accessKey: "" #needs to be provided as argument
+secretKey: "" #needs to be provided as argument
+
+defaultBucket:
+  enabled: false
+  name: bucket
+  purge: false
+  #policy: none
+  #versioning: nil
+
+buckets: 
+ - name: production
+   policy: none
+   purge: false
+ - name: staging
+   policy: none
+   purge: false
+
+makeBucketJob:
+  annotations: ""
+  podAnnotations: ""
+  securityContext:
+    allowPrivilegeEscalation: false
+    enabled: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+bucketRoot: /export/buckets
+configPathmc: /tmp/.mc
+
+environment:
+  MINIO_STORAGE_CLASS_EC: 4 #VERIFY
+  # MINIO_DOMAIN: "chart-example.local" #TODO
+
+metrics:
+  serviceMonitor:
+    enabled: false
+
+
+persistence:
+  enabled: true
+  annotations: {}
+  size: 50Gi
+  storageClass: default
+  accessMode: ReadWriteOnce
+  #existingClaim: nil
+
+resources:
+  requests:
+    memory: 1Gi
+
+#run containers as non-root
+securityContext:
+  allowPrivilegeEscalation: false
+  enabled: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+clusterDomain: cluster.local
+
+service:
+  type: LoadBalancer
+  port: 9000
+  annotations: {}
+
+#BACKUP OLD VALUES
+#service:
+#  type: ClusterIP
+#  port: 9000
+#  annotations: {}
+
+serviceAccount:
+  creation: true
+  name: parkhands-backup

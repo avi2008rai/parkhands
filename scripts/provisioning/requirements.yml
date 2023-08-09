@@ -1,0 +1,5 @@
+---
+- src: nickjj.docker
+  version: v1.9.2
+- src: geerlingguy.nodejs
+  version: 5.1.1

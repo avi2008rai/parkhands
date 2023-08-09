@@ -1,0 +1,12 @@
+Created the following resources in namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+
+configMaps:
+===========
+* {{ .Values.resourceNames.configMapName }}
+* postgresql-extended-conf
+
+secrets:
+========
+* {{ .Values.resourceNames.secretName }}
+* pgpool-initdb-scripts
+

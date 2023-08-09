@@ -1,0 +1,31 @@
+---
+- name: Create dind namespace
+  k8s:
+    definition:
+      api_version: v1
+      kind: Namespace
+      metadata:
+        name: dind
+        labels:
+          name: dind
+        annotations:
+          field.cattle.io/projectId: "{{ cluster_id }}:{{ project_system_id }}"
+      spec:
+        finalizers:
+          - kubernetes
+      status:
+        phase: Active
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create service
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/dind/resources/dind-service.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create deployment
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/dind/resources/dind-deployment.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"

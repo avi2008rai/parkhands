@@ -1,0 +1,50 @@
+{
+  "name": "graphql",
+  "version": "1.0.181",
+  "description": "Parkhands GraphQL",
+  "scripts": {
+    "start": "nodemon -L server.js"
+  },
+  "dependencies": {
+    "@graphile-contrib/pg-many-to-many": "^1.0.0-beta.12",
+    "@graphile-contrib/pg-order-by-related": "^1.0.0-beta.6",
+    "@graphile-contrib/pg-simplify-inflector": "^5.0.0-beta.1",
+    "@graphile/pg-pubsub": "^4.4.5",
+    "@graphile/postgis": "^0.1.0",
+    "express": "^4.17.1",
+    "graphile-build": "^4.4.5",
+    "graphile-build-pg": "^4.4.5",
+    "graphql": "^14.5.8",
+    "graphql-upload": "^8.1.0",
+    "pg": "7.12.1",
+    "pg-sql2": "^2.2.1",
+    "postgraphile": "4.6.0",
+    "postgraphile-core": "^4.4.5",
+    "postgraphile-plugin-connection-filter": "^1.1.3",
+    "postgraphile-plugin-connection-filter-postgis": "1.0.0-alpha.5",
+    "postgraphile-plugin-fulltext-filter": "^1.0.0-beta.7",
+    "postgraphile-plugin-nested-mutations": "^1.0.1",
+    "postgraphile-plugin-upload-field": "^1.0.0-alpha.9"
+  },
+  "devDependencies": {
+    "@babel/core": "7.7.2",
+    "@babel/polyfill": "7.7.0",
+    "@babel/preset-env": "7.7.1",
+    "@babel/register": "7.7.0",
+    "babel-plugin-import": "^1.12.2",
+    "babel-plugin-module-resolver": "3.2.0",
+    "dotenv": "8.2.0",
+    "eslint": "6.6.0",
+    "eslint-config-prettier": "6.5.0",
+    "eslint-plugin-prettier": "3.1.1",
+    "faker": "4.1.0",
+    "massive": "^6.10.0",
+    "mocha": "7.1.1",
+    "moment": "2.24.0",
+    "nodemon": "2.0.3",
+    "prettier": "1.19.1",
+    "should": "13.2.3",
+    "supertest": "4.0.2"
+  },
+  "license": "ISC"
+}

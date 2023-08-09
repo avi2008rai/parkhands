@@ -1,0 +1,7 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.resourceNames.configMapName }}
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+data: {{ include "Parkhands-init.configMapValues" . | indent 2 }}

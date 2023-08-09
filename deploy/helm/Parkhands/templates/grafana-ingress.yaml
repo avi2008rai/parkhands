@@ -1,0 +1,30 @@
+---
+kind: Ingress
+apiVersion: extensions/v1beta1
+metadata:
+  name: monitor
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+  annotations:
+    kubernetes.io/ingress.class: nginx-external
+    kubernetes.io/tls-acme: "true"
+    cert-manager.io/cluster-issuer: dico-clusterissuer
+    kubernetes.io/ingress.allow-http: "false"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    cert-manager.io/acme-challenge-type: http01
+    cert-manager.io/duration: 2160h  #90days certificate validity
+    cert-manager.io/renew-before: 720h #renew 30 days before validity ends
+    #nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  tls:
+  - hosts:
+    - monitor.{{ .Values.migrateEnvVars.rootDomain }}
+    secretName: parkhands-monitor-tls-{{ .Values.migrateEnvVars.cicdGitBranch | lower | replace "/" "-" }}
+  rules:
+    - host: monitor.{{ .Values.migrateEnvVars.rootDomain }}
+      http:
+        paths:
+          - backend:
+              serviceName: grafana
+              servicePort: 3000
+            path: /

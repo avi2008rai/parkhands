@@ -1,0 +1,70 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: storage-client
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      {{- if .Values.storageClient.job.imagePullSecret }}
+      imagePullSecrets:
+      - name: {{ .Values.storageClient.job.imagePullSecret }}
+      {{- else }}
+      {{ end -}}
+      initContainers:
+      - name: wait-storage
+        image: {{ .Values.storageClient.job.initContainers.waitStorage.repository }}{{ .Values.storageClient.job.initContainers.waitStorage.image }}:{{ .Values.storageClient.job.initContainers.waitStorage.tag }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'until curl -sSf http://${STORAGE_SERVICE_HOST}:${STORAGE_SERVICE_PORT}/minio/health/live > /dev/null; do echo waiting for Minio to start; sleep 5; done;']
+      containers:
+      - name: ph-storage-client
+        image: {{ .Values.storageClient.job.containers.phStorageClient.repository }}{{ .Values.storageClient.job.containers.phStorageClient.image }}:{{ .Values.storageClient.job.containers.phStorageClient.tag }}
+        imagePullPolicy: {{ .Values.storageClient.job.containers.phStorageClient.imagePullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ["/bin/sh", "-c"]
+        args:
+          - sleep 30;
+            mc config host add storage http://${MINIO_ENDPOINT}:${MINIO_PORT} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} --api S3v4;
+            mc policy set download storage/static;
+            mc policy set download storage/files;
+            mc policy set download storage/thumbnails;
+            mc policy set download storage/dataset;
+            mc policy set download storage/static-slots;
+            mc policy set download storage/static-spaces;
+        env:
+        - name: MINIO_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_PORT
+        - name: MINIO_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_ENDPOINT
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: MINIO_ACCESS_KEY
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: MINIO_SECRET_KEY
+        - name: MINIO_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_BUCKET
+        - name: MINIO_UPLOADS_FOLDER_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_UPLOADS_FOLDER_NAME
+      restartPolicy: Never

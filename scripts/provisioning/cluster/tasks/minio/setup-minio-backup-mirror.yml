@@ -1,0 +1,61 @@
+---
+- name: Create backup namespace
+  k8s:
+    definition:
+      api_version: v1
+      kind: Namespace
+      metadata:
+        name: backup
+        labels:
+          name: backup
+        annotations:
+          field.cattle.io/projectId: "{{ cluster_id }}:{{ project_system_id }}"
+      spec:
+        finalizers:
+          - kubernetes
+      status:
+        phase: Active
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create configmap
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/minio/backup/backup-configmap.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create secrets
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/minio/backup/backup-secrets.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create PVC
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/minio/backup/backup-data-pvc.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create service
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/minio/backup/backup-service.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create deployment
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/minio/backup/backup-deployment.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create ingress
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/minio/backup/backup-ingress.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Create cronjob to sync `backup-mirror` with `backup`
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/minio/backup/backup-cronjob.yaml"
+    kubeconfig: "{{ kubeconfig_path }}"

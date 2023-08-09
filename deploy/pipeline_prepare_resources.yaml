@@ -1,0 +1,211 @@
+---
+- hosts: localhost
+
+  vars:
+    BUILD_ID:
+    DEPLOY_DB_IMAGE_TAG: "{{ lookup('env','DEPLOY_DB_IMAGE_TAG') }}"
+    DEPLOY_GRAPHQL_IMAGE_TAG: "{{ lookup('env','DEPLOY_GRAPHQL_IMAGE_TAG') }}"
+    DEPLOY_ADMIN_IMAGE_TAG: "{{ lookup('env','DEPLOY_ADMIN_IMAGE_TAG') }}"
+    DEPLOY_CLIENT_IMAGE_TAG: "{{ lookup('env','DEPLOY_CLIENT_IMAGE_TAG') }}"
+    DEPLOY_WIDGET_IMAGE_TAG: "{{ lookup('env','DEPLOY_WIDGET_IMAGE_TAG') }}"
+    DEPLOY_ORGANIC_IMAGE_TAG: "{{ lookup('env','DEPLOY_ORGANIC_IMAGE_TAG') }}"
+    DEPLOY_IMAGE_RESIZER_IMAGE_TAG: "{{ lookup('env','DEPLOY_IMAGE_RESIZER_IMAGE_TAG') }}"
+    REGISTRY_BASE_URL: "{{ lookup('env','REGISTRY_BASE_URL') }}"
+    ROOT_DOMAIN: "{{ lookup('env','ROOT_DOMAIN') }}"
+    GIT_CLONE_URL: "{{ lookup('env','GIT_CLONE_URL') }}"
+    GIT_USERNAME: "{{ lookup('env','GIT_USERNAME') }}"
+    GIT_PASSWORD: "{{ lookup('env','GIT_PASSWORD') }}"
+    CICD_NAMESPACE: "{{ lookup('env','CICD_GIT_BRANCH') }}"
+    CICD_TEST_NAMESPACE: "test-{{ lookup('env','CICD_GIT_BRANCH') | replace('feature/', '') | truncate(16, false, '') }}-{{ lookup('env','CICD_EXECUTION_SEQUENCE') }}"
+    CICD_EVENT: "{{ lookup('env','CICD_EVENT') }}"
+    CICD_GIT_BRANCH: "{{ lookup('env','CICD_GIT_BRANCH') }}"
+    CICD_GIT_COMMIT: "{{ lookup('env','CICD_GIT_COMMIT') }}"
+    CICD_GIT_REF: "{{ lookup('env','CICD_GIT_REF') }}"
+    CICD_EXECUTION_SEQUENCE: "{{ lookup('env','CICD_EXECUTION_SEQUENCE') }}"
+    CICD_CLUSTER_ID: "{{ lookup('env','CICD_CLUSTER_ID') }}"
+    CICD_PROJECT_ID: "{{ lookup('env','CICD_PROJECT_ID') }}"
+
+  tasks:
+
+    ############################################################################
+    - name: Parse BUILD_ID from package.json on feature branch
+      set_fact:
+        BUILD_ID: "{{ (lookup('file', playbook_dir | dirname + '/package.json') | from_json).get('version') }}-{{ CICD_GIT_BRANCH | replace('feature/', '') | truncate(16, false, '') }}"
+
+    - name: Parse BUILD_ID from package.json
+      set_fact:
+        BUILD_ID: "{{ (lookup('file', playbook_dir | dirname + '/package.json') | from_json).get('version') }}"
+      when: CICD_NAMESPACE == 'master' or CICD_NAMESPACE == 'staging' or CICD_NAMESPACE == 'production'
+
+    - name: Parse BUILD_ID from package.json on PR
+      set_fact:
+        BUILD_ID: "{{ (lookup('file', playbook_dir | dirname + '/package.json') | from_json).get('version') }}-pr-{{ CICD_GIT_REF.split('/')[2] }}"
+      when: CICD_EVENT == 'pull_request'
+
+    - name: Override CICD_TEST_NAMESPACE on PR
+      set_fact:
+        CICD_TEST_NAMESPACE: "test-pr-{{ CICD_GIT_REF.split('/')[2] }}"
+      when: CICD_EVENT == 'pull_request'
+
+    - name: Override DEPLOY_DB_IMAGE_TAG
+      set_fact:
+        DEPLOY_DB_IMAGE_TAG: "{{ BUILD_ID }}"
+      when: DEPLOY_DB_IMAGE_TAG == 'LATEST'
+
+    - name: Override DEPLOY_GRAPHQL_IMAGE_TAG
+      set_fact:
+        DEPLOY_GRAPHQL_IMAGE_TAG: "{{ BUILD_ID }}"
+      when: DEPLOY_GRAPHQL_IMAGE_TAG == 'LATEST'
+
+    - name: Override DEPLOY_ADMIN_IMAGE_TAG
+      set_fact:
+        DEPLOY_ADMIN_IMAGE_TAG: "{{ BUILD_ID }}"
+      when: DEPLOY_ADMIN_IMAGE_TAG == 'LATEST'
+
+    - name: Override DEPLOY_CLIENT_IMAGE_TAG
+      set_fact:
+        DEPLOY_CLIENT_IMAGE_TAG: "{{ BUILD_ID }}"
+      when: DEPLOY_CLIENT_IMAGE_TAG == 'LATEST'
+
+    - name: Override DEPLOY_WIDGET_IMAGE_TAG
+      set_fact:
+        DEPLOY_WIDGET_IMAGE_TAG: "{{ BUILD_ID }}"
+      when: DEPLOY_WIDGET_IMAGE_TAG == 'LATEST'
+
+    - name: Override DEPLOY_ORGANIC_IMAGE_TAG
+      set_fact:
+        DEPLOY_ORGANIC_IMAGE_TAG: "{{ BUILD_ID }}"
+      when: DEPLOY_ORGANIC_IMAGE_TAG == 'LATEST'
+
+    - name: Override DEPLOY_IMAGE_RESIZER_IMAGE_TAG
+      set_fact:
+        DEPLOY_IMAGE_RESIZER_IMAGE_TAG: "{{ BUILD_ID }}"
+      when: DEPLOY_IMAGE_RESIZER_IMAGE_TAG == 'LATEST'
+
+    - name: Set tags for Docker images when pushed to registry
+      copy:
+        dest: "{{ playbook_dir | dirname + '/.tags' }}"
+        content: "{{ BUILD_ID }},{{ CICD_GIT_COMMIT }}"
+
+    ############################################################################
+    - name: Attach resources into build file for test step
+      shell: |
+        cat ./test/conf/env-namespace.yaml \
+            ./test/conf/env-configmap.yaml \
+            ./test/conf/env-secrets.yaml \
+            ./test/workloads/db-service.yaml \
+            ./test/workloads/db-deployment.yaml \
+            ./test/workloads/graphql-service.yaml \
+            ./test/workloads/graphql-deployment.yaml \
+            ./test/workloads/admin-service.yaml \
+            ./test/workloads/admin-deployment.yaml \
+            ./test/workloads/client-service.yaml \
+            ./test/workloads/client-deployment.yaml \
+            ./test/workloads/widget-service.yaml \
+            ./test/workloads/widget-deployment.yaml \
+            ./test/workloads/organic-service.yaml \
+            ./test/workloads/organic-deployment.yaml \
+            ./test/workloads/storage-service.yaml \
+            ./test/workloads/storage-deployment.yaml \
+            ./test/workloads/storage-client-job.yaml \
+            ./test/workloads/grafana-service.yaml \
+            ./test/workloads/grafana-deployment.yaml \
+            ./test/workloads/sqitch-deploy-job.yaml \
+              > ./test/parkhands-test-resources.yaml
+
+    - name: Replace variables in build file for test step
+      template:
+        src: ./test/parkhands-test-resources.yaml
+        dest: ./test/parkhands-test-resources.yaml
+
+    - name: Replace variables in test-db step
+      template:
+        src: ./test/jobs/test-db-job.yaml
+        dest: ./test/jobs/test-db-job.yaml
+
+    - name: Replace variables in test-api step
+      template:
+        src: ./test/jobs/test-api-job.yaml
+        dest: ./test/jobs/test-api-job.yaml
+
+    - name: Replace variables in test-organic step
+      template:
+        src: ./test/jobs/test-organic-job.yaml
+        dest: ./test/jobs/test-organic-job.yaml
+
+    - name: Replace variables in test-ui-admin step
+      template:
+        src: ./test/jobs/test-ui-admin-job.yaml
+        dest: ./test/jobs/test-ui-admin-job.yaml
+
+    - name: Set CICD_TEST_NAMESPACE useful for kubectl later
+      copy:
+        dest: "{{ playbook_dir | dirname + '/.CICD_TEST_NAMESPACE' }}"
+        content: "{{ CICD_TEST_NAMESPACE }}"
+
+    ############################################################################
+    - name: Attach initial resources into initial file
+      shell: |
+        cat ./{{ CICD_NAMESPACE }}/conf/env-namespace.yaml \
+            ./{{ CICD_NAMESPACE }}/conf/env-configmap.yaml \
+            ./{{ CICD_NAMESPACE }}/conf/env-secrets.yaml \
+            ./{{ CICD_NAMESPACE }}/db/postgresql-extended-conf.yaml \
+            ./{{ CICD_NAMESPACE }}/db/pgpool-initdb-scripts.yaml \
+              > ./{{ CICD_NAMESPACE }}/parkhands-initial.yaml
+      when: CICD_NAMESPACE == 'staging' or CICD_NAMESPACE == 'production'
+
+    - name: Replace variables in initial file
+      template:
+        src: ./{{ CICD_NAMESPACE }}/parkhands-initial.yaml
+        dest: ./{{ CICD_NAMESPACE }}/parkhands-initial.yaml
+      when: CICD_NAMESPACE == 'staging' or CICD_NAMESPACE == 'production'
+
+    - name: Attach resources into main file
+      shell: |
+        cat ./{{ CICD_NAMESPACE }}/workloads/graphql-service.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/graphql-deployment.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/graphql-ingress.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/admin-service.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/admin-deployment.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/admin-ingress.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/client-service.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/client-deployment.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/client-ingress.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/widget-service.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/widget-deployment.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/widget-ingress.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/organic-service.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/organic-deployment.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/organic-ingress.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/storage-service.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/storage-deployment.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/storage-ingress.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/storage-client-job.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/grafana-service.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/grafana-deployment.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/grafana-ingress.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/sqitch-deploy-job.yaml \
+            ./{{ CICD_NAMESPACE }}/workloads/job-cleanup-cronjob.yaml \
+            ./{{ CICD_NAMESPACE }}/backup/postgresql-backup-cronjob.yaml \
+              > ./{{ CICD_NAMESPACE }}/parkhands-resources.yaml
+      when: CICD_NAMESPACE == 'staging' or CICD_NAMESPACE == 'production'
+
+    - name: Attach autoscalers, postgres backup cron into main file
+      shell: |
+        cat ./{{ CICD_NAMESPACE }}/autoscalers/admin-autoscaler.yaml \
+            ./{{ CICD_NAMESPACE }}/autoscalers/client-autoscaler.yaml \
+            ./{{ CICD_NAMESPACE }}/autoscalers/widget-autoscaler.yaml \
+            ./{{ CICD_NAMESPACE }}/autoscalers/graphql-autoscaler.yaml \
+              >> ./{{ CICD_NAMESPACE }}/parkhands-resources.yaml
+      when: CICD_NAMESPACE == 'production'
+
+    - name: Replace variables in main file
+      template:
+        src: ./{{ CICD_NAMESPACE }}/parkhands-resources.yaml
+        dest: ./{{ CICD_NAMESPACE }}/parkhands-resources.yaml
+      when: CICD_NAMESPACE == 'staging' or CICD_NAMESPACE == 'production'
+
+    - name: Set CICD_NAMESPACE useful for kubectl later
+      copy:
+        dest: "{{ playbook_dir | dirname + '/.CICD_NAMESPACE' }}"
+        content: "{{ CICD_NAMESPACE }}"

@@ -1,0 +1,16 @@
+[
+  {
+    "id": 1,
+    "name": "Single Member",
+    "email": "single_member@parkhands.de",
+    "password": "12345678",
+    "role": "app_single_member"
+  },
+  {
+    "id": 2,
+    "name": "Super Admin",
+    "email": "super_admin@parkhands.de",
+    "password": "12345678",
+    "role": "app_super_admin"
+  }
+]

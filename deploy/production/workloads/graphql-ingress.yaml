@@ -1,0 +1,38 @@
+---
+kind: Ingress
+apiVersion: extensions/v1beta1
+metadata:
+  name: api
+  namespace: {{ CICD_NAMESPACE }}
+  annotations:
+    kubernetes.io/ingress.class: nginx-external
+    kubernetes.io/tls-acme: "true"
+    cert-manager.io/cluster-issuer: dico-clusterissuer
+    kubernetes.io/ingress.allow-http: "false"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    cert-manager.io/acme-challenge-type: http01
+    #nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  tls:
+  - hosts:
+    - api.{{ ROOT_DOMAIN }}
+    secretName: parkhands-api-{{ CICD_GIT_BRANCH }}-tls
+  rules:
+    - host: api.{{ ROOT_DOMAIN }}
+      http:
+        paths:
+        - path: /graphql
+          backend:
+            serviceName: graphql
+            servicePort: 5000
+        - path: /graphql/stream
+          backend:
+            serviceName: graphql
+            servicePort: 5000
+        - path: /graphiql
+          backend:
+            serviceName: graphql
+            servicePort: 5000

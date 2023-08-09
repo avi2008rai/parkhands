@@ -1,0 +1,170 @@
+---
+#TODO this job must only ever run for deployment on staging and production environments
+# deployments other then the two mentioned above should instead use a database dump and run the sqitch deployment as part
+# of the CI/CD Pipeline runs (for every push/update to a merge request with a fresh database)
+{{- if or (eq .Values.migrateEnvVars.cicdNamespace "production") (eq .Values.migrateEnvVars.cicdNamespace "staging") }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: initial-sqitch-deploy
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 259200  # 3 days
+  template:
+    spec:
+      {{- if .Values.sqitch.job.imagePullSecret }}
+      imagePullSecrets:
+      - name: {{ .Values.sqitch.job.imagePullSecret }}
+      {{- else }}
+      {{ end -}}
+      initContainers:
+      - name: git-sync
+        image: {{ .Values.sqitch.job.initContainers.gitSync.repository }}{{ .Values.sqitch.job.initContainers.gitSync.image }}:{{ .Values.sqitch.job.initContainers.gitSync.tag }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            cd /workdir
+            git clone --depth 1 https://$GIT_USERNAME:$GIT_PASSWORD@{{ .Values.migrateEnvVars.gitCloneUrl }} -b {{ .Values.migrateEnvVars.cicdGitBranch }} parkhands
+            cd parkhands
+            git fetch origin {{ .Values.migrateEnvVars.cicdGitRef }}:pr-1
+            git status
+        volumeMounts:
+        - name: git-source
+          mountPath: /workdir
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: password
+      - name: setup-sqitch-conf
+        image: {{ .Values.sqitch.job.initContainers.setupSqitchConf.repository }}{{ .Values.sqitch.job.initContainers.setupSqitchConf.image }}:{{ .Values.sqitch.job.initContainers.setupSqitchConf.tag }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'sed -i s^__POSTGRESQL_PASSWORD__^"${POSTGRESQL_PASSWORD}^g" /repo/sqitch.conf'] #FIXME
+        env:
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        volumeMounts:
+        - name: git-source
+          mountPath: /repo
+          subPath: parkhands/db/migrations
+      - name: wait-db
+        image: {{ .Values.sqitch.job.initContainers.waitDb.repository }}{{ .Values.sqitch.job.initContainers.waitDb.image }}:{{ .Values.sqitch.job.initContainers.waitDb.tag }}
+        imagePullPolicy: {{ .Values.sqitch.job.containers.phSqitch.imagePullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'until PGPASSWORD=${POSTGRESQL_PASSWORD} psql -h ${DB_HOST} -U ${POSTGRESQL_USERNAME} -d ${DB_NAME}; do echo waiting for db; sleep 2; done;']
+        env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: POSTGRESQL_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+      containers:
+      - name: ph-sqitch
+        image: {{ .Values.sqitch.job.containers.phSqitch.repository }}{{ .Values.sqitch.job.containers.phSqitch.image }}:{{ .Values.sqitch.job.containers.phSqitch.tag }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'sqitch status --target db:pg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@${DB_HOST:-postgresql-ha-pgpool}:${DB_PORT:-5432}/${POSTGRESQL_DB:-app} ; sqitch deploy --target db:pg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@${DB_HOST:-postgresql-ha-pgpool}:${DB_PORT:-5432}/${POSTGRESQL_DB:-app} && sqitch status --target db:pg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@${DB_HOST:-postgresql-ha-pgpool}:${DB_PORT:-5432}/${POSTGRESQL_DB:-app}']
+        env:
+        - name: SQITCH_ORIG_SYSUSER
+          value: kubernetes
+        - name: SQITCH_ORIG_EMAIL
+          value: svilen@camplight.net #FIXME
+        - name: DB_ANON_ROLE
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_ANON_ROLE
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: DB_PASS
+        - name: DB_SCHEMA
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_SCHEMA
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_USER
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: JWT_SECRET
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NODE_ENV
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_PORT
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        volumeMounts:
+        - name: git-source
+          mountPath: /repo
+          subPath: parkhands/db/migrations
+      restartPolicy: Never
+      volumes:
+      - name: git-source
+        emptyDir: {}
+{{- else }}
+{{ end -}}

@@ -1,0 +1,9 @@
+{
+  "extends": "../shared/tsconfig.shared",
+  "compilerOptions": {
+    "baseUrl": "../",
+    "paths": {
+      "*": ["widget/*", "shared/*"]
+    }
+  }
+}

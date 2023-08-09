@@ -1,0 +1,145 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: storage
+  name: storage
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+spec:
+  replicas: {{ .Values.storage.deployment.replicas }}
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: storage
+  selector:
+    matchLabels:
+      app: storage
+  template:
+    metadata:
+      labels:
+        app: storage
+      annotations:
+        {{ if not (eq .Values.migrateEnvVars.cicdNamespace "production") }}
+        gitCommitHash: {{ .Values.migrateEnvVars.cicdGitCommit | quote }}
+        {{ end }}
+        backup.velero.io/backup-volumes: storage-data
+    spec:
+      {{- if .Values.organic.deployment.imagePullSecret }}
+      imagePullSecrets:
+      - name: {{ .Values.organic.deployment.imagePullSecret }}
+      {{ else -}}
+      {{ end -}}
+      containers:
+      - name: ph-storage
+        image: {{ .Values.storage.deployment.containers.phStorage.repository }}{{ .Values.storage.deployment.containers.phStorage.image }}:{{ .Values.storage.deployment.containers.phStorage.tag }}
+        imagePullPolicy: {{ .Values.storage.deployment.containers.phStorage.imagePullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ["/bin/sh", "-c"]
+        args:
+          - mkdir -p /storage/static;
+            mkdir -p /storage/files;
+            mkdir -p /storage/thumbnails;
+            mkdir -p /storage/dataset;
+            mkdir -p /storage/static-slots;
+            mkdir -p /storage/static-spaces;
+            /usr/bin/minio server /storage;
+        ports:
+          - containerPort: 9000
+        env:
+        - name: MINIO_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_PORT
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: MINIO_ACCESS_KEY
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: MINIO_SECRET_KEY
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        readinessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        resources: {}
+        volumeMounts:
+        - mountPath: /storage
+          name: storage-data
+      - name: ph-image-resizer
+        image: {{ .Values.storage.deployment.containers.phImageResizer.repository }}{{ .Values.storage.deployment.containers.phImageResizer.image }}:{{ .Values.migrateEnvVars.deployImageResizerTag }}
+        imagePullPolicy: {{ .Values.storage.deployment.containers.phImageResizer.imagePullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        env:
+        - name: MINIO_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_PORT
+        - name: MINIO_ENDPOINT
+          value: 'localhost'
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: MINIO_ACCESS_KEY
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: MINIO_SECRET_KEY
+        - name: MINIO_SECURITY
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_SECURITY
+        - name: MINIO_RESIZER_SOURCE
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_BUCKET
+        - name: MINIO_RESIZER_DESTINATION
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_RESIZER_DESTINATION
+        - name: MINIO_RESIZER_MAX_WIDTH
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_RESIZER_MAX_WIDTH
+        - name: MINIO_RESIZER_MAX_HEIGHT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: MINIO_RESIZER_MAX_HEIGHT
+      restartPolicy: Always
+  volumeClaimTemplates:
+  - metadata:
+      name: storage-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi
+status:
+  replicas: 1

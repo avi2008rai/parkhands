@@ -1,0 +1,151 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ CICD_EXECUTION_SEQUENCE }}-sqitch-deploy
+  namespace: {{ CICD_NAMESPACE }}
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 259200  # 3 days
+  template:
+    spec:
+      initContainers:
+      - name: git-sync
+        image: alpine/git:v2.24.1
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            cd /workdir
+            git clone --depth 1 {{ GIT_CLONE_URL }} -b {{ CICD_GIT_BRANCH }} parkhands
+            cd parkhands
+            git fetch origin {{ CICD_GIT_REF }}:pr-1
+            git status
+        volumeMounts:
+        - name: git-source
+          mountPath: /workdir
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: password
+      - name: setup-sqitch-conf
+        image: busybox:1.28
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'sed -i s^__POSTGRESQL_PASSWORD__^"${POSTGRESQL_PASSWORD}^g" /repo/sqitch.conf']
+        env:
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        volumeMounts:
+        - name: git-source
+          mountPath: /repo
+          subPath: parkhands/db/migrations
+      - name: wait-db
+        image: tmaier/postgresql-client:latest
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'until PGPASSWORD=${POSTGRESQL_PASSWORD} psql -h ${DB_HOST} -U ${POSTGRESQL_USERNAME} -d ${DB_NAME}; do echo waiting for db; sleep 2; done;']
+        env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: POSTGRESQL_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+      containers:
+      - name: ph-sqitch
+        image: sqitch/sqitch:1.0.0
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'sqitch status ${DB_ENV} ; sqitch deploy ${DB_ENV} && sqitch status ${DB_ENV}']
+        env:
+        - name: DB_ENV
+          value: {{ CICD_GIT_BRANCH }}
+        - name: SQITCH_ORIG_SYSUSER
+          value: kubernetes
+        - name: SQITCH_ORIG_EMAIL
+          value: svilen@camplight.net
+        - name: DB_ANON_ROLE
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_ANON_ROLE
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: DB_PASS
+        - name: DB_SCHEMA
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_SCHEMA
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_USER
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: JWT_SECRET
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NODE_ENV
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        volumeMounts:
+        - name: git-source
+          mountPath: /repo
+          subPath: parkhands/db/migrations
+      restartPolicy: Never
+      volumes:
+      - name: git-source
+        emptyDir: {}

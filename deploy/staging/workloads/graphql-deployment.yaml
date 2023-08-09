@@ -1,0 +1,126 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: graphql
+  name: graphql
+  namespace: {{ CICD_NAMESPACE }}
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: graphql
+  template:
+    metadata:
+      labels:
+        app: graphql
+    spec:
+      imagePullSecrets:
+      - name: parkhands-registry-secret
+      initContainers:
+      - name: git-sync
+        image: alpine/git:v2.24.1
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            cd /workdir
+            git clone --depth 1 {{ GIT_CLONE_URL }} -b {{ CICD_GIT_BRANCH }} parkhands
+            cd parkhands
+            git fetch origin {{ CICD_GIT_REF }}:pr-1
+            git status
+        volumeMounts:
+        - name: git-source
+          mountPath: /workdir
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: password
+      - name: setup-sqitch-conf
+        image: busybox:1.28
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'sed -i s^__POSTGRESQL_PASSWORD__^"${POSTGRESQL_PASSWORD}^g" /repo/sqitch.conf']
+        env:
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        volumeMounts:
+        - name: git-source
+          mountPath: /repo
+          subPath: parkhands/db/migrations
+      - name: wait-sqitch
+        image: sqitch/sqitch:1.0.0
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'until sqitch status ${DB_ENV} | grep "up-to-date"; do echo waiting for sqitch migrations; sleep 5; done;']
+        env:
+        - name: DB_ENV
+          value: {{ CICD_GIT_BRANCH }}
+        volumeMounts:
+        - name: git-source
+          mountPath: /repo
+          subPath: parkhands/db/migrations
+      containers:
+      - name: ph-graphql
+        image: {{ REGISTRY_BASE_URL }}/ph_graphql:{{ DEPLOY_GRAPHQL_IMAGE_TAG }}
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+        ports:
+        - containerPort: 5000
+        command: ['sh', '-c',  'node server.js']
+        envFrom:
+        - configMapRef:
+            name: env-configmap
+        - secretRef:
+            name: env-secrets
+        livenessProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        readinessProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        resources: {}
+          # requests:
+          #   cpu: 100m
+          #   memory: 100Mi
+          # limits:
+          #   cpu: 200m
+          #   memory: 200Mi
+        volumeMounts:
+        - name: graphql-schema
+          mountPath: /schema
+      restartPolicy: Always
+      volumes:
+      - name: graphql-schema
+        emptyDir: {}
+      - name: git-source
+        emptyDir: {}
+status: {}

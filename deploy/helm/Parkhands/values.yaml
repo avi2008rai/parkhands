@@ -1,0 +1,400 @@
+# Default values for Parkhands.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+#FIXME deprecate me
+containerRegistryPublic:
+  baseUrl: docker.io/
+  pullSecret: ""
+
+#FIXME depcrate me
+containerRegistryPrivate:
+    #baseUrl: docker.diconium.com:443/vw/parkhands/application/
+  baseUrl: ghcr.io/diconium/parkhands/
+  pullSecret: parkhands-registry-secret #TODO where will this come from? -> Parkhands-init helm chart(?)
+
+#FIXME credentials for github via secret 'github-credentials'
+applicationRepository:
+  projectUrl: github.com/diconium/Parkhands
+  #projectUrl: git.diconium.com/vw/parkhands/application.git
+
+imagePullRegistry: diconium/hub/mirror/ #FIXME!
+
+##individual components
+graphql:
+  deployment:
+    replicas: 4
+    imagePullSecret: parkhands-registry-secret
+    initContainers:
+      gitSync:
+        repository: docker.io/
+        image: alpine/git
+        tag: v2.24.1
+    containers:
+      phGraphql: #tag is handled via migrateEnvVars.deployGraphqlImageTag!
+        repository: ghcr.io/diconium/parkhands/
+        image: ph_graphql
+        imagePullPolicy: Always
+        livenessProbe:
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        readinessProbe:
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+          limits:
+            cpu: 500m
+            memory: 500Mi
+
+admin:
+  deployment:
+    replicas: 2
+    imagePullSecret: parkhands-registry-secret
+    initContainers:
+      waitGraphql:
+        repository: docker.io/
+        image: radial/busyboxplus
+        tag: curl
+    containers:
+      phAdmin: #tag is handled via migrateEnvVars.deployAdminImageTag!
+        repository: ghcr.io/diconium/parkhands/
+        image: ph_admin
+        imagePullPolicy: Always
+        livenessProbe:
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        readinessProbe:
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: 100m
+            memory: 0.5Gi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+
+
+client:
+  deployment:
+    replicas: 4
+    imagePullSecret: parkhands-registry-secret
+    initContainers:
+      waitGraphql: #same image is used for admin.Initcontainers
+        repository: docker.io/
+        image: radial/busyboxplus
+        tag: curl
+    containers:
+      phClient: #tag is handled via migrateEnvVars.deployAdminImageTag!
+        repository: ghcr.io/diconium/parkhands/
+        image: ph_client
+        imagePullPolicy: Always
+        livenessProbe:
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        readinessProbe:
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: 100m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 2Gi
+
+widget:
+  deployment:
+    replicas: 2
+    imagePullSecret: parkhands-registry-secret
+    initContainers:
+      waitGraphql: #same image is used for admin.Initcontainers
+        repository: docker.io/
+        image: radial/busyboxplus
+        tag: curl
+    containers:
+      phWidget: #tag is handled via migrateEnvVars.deployWidgetImageTag!
+        repository: ghcr.io/diconium/parkhands/
+        image: ph_widget
+        imagePullPolicy: Always
+        livenessProbe:
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        readinessProbe:
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: 100m
+            memory: 0.5Gi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+
+organic:
+  deployment:
+    replicas: 1
+    imagePullSecret: parkhands-registry-secret #FIXME!
+    initContainers:
+      waitDb:
+        repository: docker.io/
+        image: tmaier/postgresql-client
+        tag: latest
+    containers:
+      phOrganic: #tag is handled via migrateEnvVars.deployOrganicImageTag!
+        repository: ghcr.io/diconium/parkhands/
+        image: ph_organic
+        imagePullPolicy: Always
+
+storage:
+  deployment: #FIXME technically, this is a stateful set!
+    replicas: 1
+    imagePullSecret: "" #image comes from docker registry!
+    containers:
+      phStorage:
+        repository: docker.io/
+        image: minio/minio
+        tag: RELEASE.2020-04-04T05-39-31Z
+        imagePullPolicy: IfNotPresent
+      phImageResizer:
+        repository: ghcr.io/diconium/parkhands/
+        image: ph_image_resizer
+        imagePullPolicy: Always
+
+#FIXME apparently the storageClient is currently not used!
+#FIXME this job may fail because the parameters for the InitContainers are wrong
+storageClient:
+  job:
+    imagePullSecret: "" #image comes from docker registry!
+    initContainers:
+      waitStorage:
+        repository: docker.io/
+        image: radial/busyboxplus
+        tag: curl
+    containers:
+      phStorageClient:
+        repository: docker.io/
+        image: minio/mc
+        tag: RELEASE.2020-04-04T05-28-55Z
+        imagePullPolicy: Always
+
+grafana:
+  deployment:
+    imagePullSecret: "" #image comes from docker registry #FIXME currently broken
+    initContainers:
+      gitSync:
+        repository: docker.io/
+        image: alpine/git
+        tag: "v2.24.1"
+      waitDb:
+        repository: docker.io/
+        image: tmaier/postgresql-client
+        tag: latest
+      setupGrafanaConf:
+        repository: docker.io/
+        image: busybox
+        tag: "1.28"
+    containers:
+      phGrafana:
+        repository: docker.io/
+        image: grafana/grafana
+        tag: "6.7.3"
+        imagePullPolicy: IfNotPresent
+        dataVolumeSize: 10Gi
+
+
+sqitch:
+  job:
+    imagePullSecret: "" #image comes from docker registry!
+    initContainers:
+      gitSync:
+        repository: docker.io/
+        image: alpine/git
+        tag: v2.24.1
+      setupSqitchConf:
+        repository: docker.io/
+        image: busybox
+        tag: "1.28"
+      waitDb:
+        repository: docker.io/
+        image: tmaier/postgresql-client
+        tag: latest
+    containers:
+      phSqitch:
+        repository: docker.io/
+        image: sqitch/sqitch
+        tag: 1.0.0
+        imagePullPolicy: IfNotPresent
+
+ #FIXME its a cronjob (not a job)
+cleanup:
+  job:
+    imagePullSecret: ""
+    containers:
+      kubectlRunner:
+        repository: docker.io/
+        image: dtzar/helm-kubectl
+        tag: "3.1.2"
+
+#FIXME backup will probably also fail, because it ought to upload the backup to minio and backup-minio via URL - both systems are currently not running
+# 1. backup.parkhands.com
+# 2. backup-mirror.parkhands.com
+backup:
+  job:
+    imagePullSecret: ""
+    initContainers:
+      waitBackupStorage:
+        repository: docker.io/
+        image: radial/busyboxplus
+        tag: curl
+      gitSync:
+        repository: docker.io/
+        image: alpine/git
+        tag: v2.24.1
+    containers:
+      postgresBackup:
+        repository: docker.io/
+        image: postgres
+        tag: "11.5"
+      copyBackup:
+        repository: docker.io/
+        image: minio/mc
+        tag: RELEASE.2020-04-04T05-28-55Z
+    backupTarget:
+      url: backup.parkhands.playground.rg03.diconium.cloud
+      #TODO clarify requirements for the backup - why would two minio instances be required?
+
+#FIXME temporary for enabling/disabling tests
+tests:
+    apiTests: disabled
+
+
+nameOverride: ""
+fullnameOverride: "rg03.diconium.cloud"
+
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+#temporary take old env variables with us
+#NOTE the naming scheme for the ansible deployment was UPPERCASE + SNAKE_CASE - but here we stick to helm guidelines
+#TODO all the variables below MUST be migrated to different variables to complete the migration
+migrateEnvVars:
+    #buildId: #TODO either <version> or CICD_GIT_BRANCH (branchname shortened to 16 chars) depending on environment
+    #buildDir: staging #TODO BUILD_DIR is used by the former deployment (via ansible) to template environment specific deployments (was used as target directory)
+    #FIXME tag is for now set to 1.0.0 for testing
+    #deployDbImageTag: 1.1.0
+    deployGraphqlImageTag: latest
+    deployAdminImageTag: latest
+    deployClientImageTag: latest
+    deployWidgetImageTag: latest
+    deployOrganicImageTag: latest
+    deployImageResizerTag: latest
+    registryBaseUrl: ghcr.io/diconium/parkhands
+    rootDomain: staging.parkhands.playground.rg03.diconium.cloud
+    gitCloneUrl: github.com/diconium/Parkhands #TODO take care that it refers to the right tag/release!
+    gitUsername: DEBUG_GIT_USERNAME #TODO this needs to be provided via secret github-credentials
+    gitPassword: DEBUG_GIT_PASSWORD #TODO this needs to be provided via secret github-credentials
+    cicdNamespace: staging #TODO distinguish between environment, namespace and branch throughout all resources
+    cicdTestNamespace: #TODO should not be needed any longer!
+    cicdEvent: DEBUG_EVENT #TODO should not be needed any longer
+    cicdGitBranch: master  #FIXME
+    cicdGitCommit: DEBUG_COMMIT #TODO is used for annotating deployments to allow for rolling releases on stage and for dev branches
+    cicdGitRef: master #FIXME
+    cicdExecutionSequence: debug-execution-sequence #TODO is used to prefix tests
+    cicdClusterId: DEBUG_CLUSTER_ID #TODO should not be needed any longer
+    cicdProjectId: DEBUG_PROJECT_ID #TODO should not be needed any longer
+

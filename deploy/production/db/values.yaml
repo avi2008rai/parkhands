@@ -1,0 +1,49 @@
+---
+  postgresqlImage:
+    registry: docker.diconium.com:443
+    repository: vw/parkhands/application/ph_postgresql-repmgr
+    tag: 1.0.0
+    pullPolicy: IfNotPresent
+    pullSecrets:
+      - parkhands-registry-secret
+    debug: false
+  postgresql:
+    username: postgres
+    password: postgrespass
+    database: app
+    repmgrUsername: repmgr
+    repmgrPassword: repmgrpass
+    existingSecret: env-secrets
+    extendedConfCM: postgresql-extended-conf
+    replicaCount: 2
+    # pdb:
+    #   create: true
+    #   minAvailable: 1
+    podAnnotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
+      backup.velero.io/backup-volumes: data
+
+  pgpool:
+    adminPassword: pgpoolpass
+    existingSecret: env-secrets
+    initdbScriptsSecret: pgpool-initdb-scripts
+    replicaCount: 2
+    useLoadBalancing: false
+    # pdb:
+    #   create: true
+    #   minAvailable: 1
+  pgpoolImage:
+    debug: false
+
+  persistence:
+    enabled: true
+    size: 10Gi
+
+  volumePermissions:
+    enabled: true
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false

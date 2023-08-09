@@ -1,0 +1,78 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: organic
+  name: organic
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+spec:
+  replicas: {{ .Values.organic.deployment.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: organic
+  template:
+    metadata:
+      {{ if not (eq .Values.migrateEnvVars.cicdNamespace "production") }}
+      annotations:
+        gitCommitHash: {{ .Values.migrateEnvVars.cicdGitCommit | quote }}
+      {{ end }}
+      labels:
+        app: organic
+    spec:
+      {{- if .Values.organic.deployment.imagePullSecret }}
+      imagePullSecrets:
+      - name: {{ .Values.organic.deployment.imagePullSecret }}
+      {{ else -}}
+      {{- end -}}
+      initContainers:
+      - name: wait-db
+        image: {{ .Values.organic.deployment.initContainers.waitDb.repository }}{{ .Values.organic.deployment.initContainers.waitDb.image }}:{{ .Values.organic.deployment.initContainers.waitDb.tag }}
+        imagePullPolicy: {{ .Values.organic.deployment.containers.phOrganic.imagePullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'until PGPASSWORD=${POSTGRESQL_PASSWORD} psql -h ${DB_HOST} -U ${POSTGRESQL_USERNAME} -d ${DB_NAME}; do echo waiting for db; sleep 2; done;']
+        env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: POSTGRESQL_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+      containers:
+      - name: ph-organic
+        image: {{ .Values.organic.deployment.containers.phOrganic.repository }}{{ .Values.organic.deployment.containers.phOrganic.image }}:{{ .Values.migrateEnvVars.deployOrganicImageTag }}
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ["/bin/sh", "-c", "pm2-runtime pm2.config.js --no-autorestart && pm2 logs --lines 1000"]
+        ports:
+        - containerPort: 5001
+        - containerPort: 5002
+        - containerPort: 5003
+        envFrom:
+        - configMapRef:
+            name: env-configmap
+        - secretRef:
+            name: env-secrets
+        resources: {}
+        volumeMounts:
+      restartPolicy: Always
+      volumes:
+status: {}

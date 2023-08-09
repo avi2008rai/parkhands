@@ -1,0 +1,137 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: widget
+  name: widget
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+spec:
+  replicas: {{ .Values.widget.deployment.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: widget
+  template:
+    metadata:
+      {{ if not (eq .Values.migrateEnvVars.cicdNamespace "production") }}
+      annotations:
+        gitCommitHash: {{ .Values.migrateEnvVars.cicdGitCommit | quote }}
+      {{ end }}
+      labels:
+        app: widget
+    spec:
+      {{- if .Values.widget.deployment.imagePullSecret }}
+      imagePullSecrets:
+      - name: {{ .Values.widget.deployment.imagePullSecret }}
+      {{ else -}}
+      {{ end -}}
+      initContainers:
+      - name: wait-graphql
+        image: {{ .Values.widget.deployment.initContainers.waitGraphql.repository }}{{ .Values.widget.deployment.initContainers.waitGraphql.image }}:{{ .Values.widget.deployment.initContainers.waitGraphql.tag }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            until curl -sSf -X POST -H "Content-Type: application/json" --data '{"query": "{ languagesList { name } }"}' ${GRAPHQL_API_URL} > /dev/null; do echo waiting for GraphQL API; sleep 2; done;
+        env:
+        - name: GRAPHQL_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAPHQL_API_URL
+      containers:
+      - name: ph-widget
+        image: {{ .Values.widget.deployment.containers.phWidget.repository }}{{ .Values.widget.deployment.containers.phWidget.image }}:{{ .Values.migrateEnvVars.deployWidgetImageTag }}
+        imagePullPolicy: {{ .Values.widget.deployment.containers.phWidget.imagePullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        ports:
+        - containerPort: 7777
+        env:
+        - name: GRAPHQL_API_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAPHQL_API_ENDPOINT
+        - name: GRAPHQL_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAPHQL_API_URL
+        - name: GRAPHQL_WS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: GRAPHQL_WS_URL
+        - name: WIDGET_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: WIDGET_PORT
+        - name: WIDGET_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: WIDGET_URL
+        - name: CLIENT_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: CLIENT_URL
+        - name: CDN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: CDN_URL
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NODE_ENV
+        - name: BUILD_ID
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: BUILD_ID
+        - name: NPM_RUN_TARGET
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NPM_RUN_TARGET
+        - name: GOOGLE_MAPS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: GOOGLE_MAPS_API_KEY
+        livenessProbe:
+          tcpSocket:
+            port: 7777
+          initialDelaySeconds: {{ .Values.widget.deployment.containers.phWidget.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.widget.deployment.containers.phWidget.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.widget.deployment.containers.phWidget.livenessProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.widget.deployment.containers.phWidget.livenessProbe.successThreshold }}
+          failureThreshold: {{ .Values.widget.deployment.containers.phWidget.livenessProbe.failureThreshold }}
+        readinessProbe:
+          tcpSocket:
+            port: 7777
+          initialDelaySeconds: {{ .Values.widget.deployment.containers.phWidget.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.widget.deployment.containers.phWidget.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.widget.deployment.containers.phWidget.readinessProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.widget.deployment.containers.phWidget.readinessProbe.successThreshold }}
+          failureThreshold: {{ .Values.widget.deployment.containers.phWidget.readinessProbe.failureThreshold }}
+        resources:
+          requests:
+            cpu: {{ .Values.widget.deployment.containers.phWidget.resources.requests.cpu }}
+            memory: {{ .Values.widget.deployment.containers.phWidget.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.widget.deployment.containers.phWidget.resources.limits.cpu }}
+            memory: {{ .Values.widget.deployment.containers.phWidget.resources.limits.memory }}
+        workingDir: /web/widget
+      restartPolicy: Always
+status: {}

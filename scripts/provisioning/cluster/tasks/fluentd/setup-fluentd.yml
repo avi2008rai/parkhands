@@ -1,0 +1,23 @@
+---
+- name: Install fluentd using helm chart
+  shell: |
+    helm repo add stable https://kubernetes-charts.storage.googleapis.com --kubeconfig="{{ kubeconfig_path }}"
+    helm repo update --kubeconfig="{{ kubeconfig_path }}"
+
+    helm upgrade --install fluentd stable/fluentd \
+      --namespace=loki \
+      --kubeconfig="{{ kubeconfig_path }}" \
+      -f {{ playbook_dir }}/tasks/fluentd/values.yaml
+
+- name: Update configmap for fluentbit to send logs to fluentd
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/fluentd/configmap/loki-fluent-bit-loki.yml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Force redeploy fluent-bit daemonset
+  shell: |
+    kubectl patch daemonset loki-fluent-bit-loki \
+      --namespace=loki \
+      --kubeconfig="{{ kubeconfig_path }}" \
+      -p "{\"spec\": {\"template\": {\"metadata\": { \"labels\": {  \"redeploy\": \"$(date +%s)\"}}}}}"

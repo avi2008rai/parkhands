@@ -1,0 +1,31 @@
+---
+- name: Create velero namespace
+  k8s:
+    definition:
+      api_version: v1
+      kind: Namespace
+      metadata:
+        name: velero
+        labels:
+          name: velero
+        annotations:
+          field.cattle.io/projectId: "{{ cluster_id }}:{{ project_system_id }}"
+      spec:
+        finalizers:
+          - kubernetes
+      status:
+        phase: Active
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Install velero on cluster
+  shell: |
+    velero install \
+        --kubeconfig="{{ kubeconfig_path }}" \
+        --provider aws \
+        --plugins velero/velero-plugin-for-aws:v1.0.0 \
+        --bucket velero \
+        --secret-file ./tasks/velero/credentials-velero \
+        --use-volume-snapshots=false \
+        --use-restic \
+        --backup-location-config region=minio,s3ForcePathStyle="true",s3Url=https://backup-mirror.parkhands.com

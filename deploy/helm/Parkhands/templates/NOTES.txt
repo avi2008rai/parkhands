@@ -1,0 +1,15 @@
+Installed Parkhands Application stack.
+
+Installed image tags:
+admin:          {{ .Values.migrateEnvVars.deployAdminImageTag }}
+client:         {{ .Values.migrateEnvVars.deployClientImageTag }}
+organic:        {{ .Values.migrateEnvVars.deployOrganicImageTag }}
+widget:         {{ .Values.migrateEnvVars.deployWidgetImageTag }}
+graphql:        {{ .Values.migrateEnvVars.deployGraphqlImageTag }}
+imageResizer:   {{ .Values.migrateEnvVars.deployImageResizerTag }}
+
+
+client-frontend is available via: https://app.{{ .Values.migrateEnvVars.rootDomain }}
+admin-frontend is available via: https://admin.{{ .Values.migrateEnvVars.rootDomain }}
+
+Git commit hash: {{ .Values.migrateEnvVars.cicdGitCommit }}

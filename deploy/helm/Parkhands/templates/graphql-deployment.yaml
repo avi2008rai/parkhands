@@ -1,0 +1,151 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: graphql
+  name: graphql
+  namespace: {{ .Values.migrateEnvVars.cicdNamespace }}
+spec:
+  replicas: {{ .Values.graphql.deployment.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: graphql
+  template:
+    metadata:
+      {{ if not (eq .Values.migrateEnvVars.cicdNamespace "production") }}
+      annotations:
+        gitCommitHash: {{ .Values.migrateEnvVars.cicdGitCommit | quote }}
+      {{ end }}
+      labels:
+        app: graphql
+    spec:
+      {{- if .Values.graphql.deployment.imagePullSecret }}
+      imagePullSecrets:
+      - name: {{ .Values.graphql.deployment.imagePullSecret }}
+      {{ else -}}
+      {{- end -}}
+      initContainers:
+      - name: git-sync
+        image: {{ .Values.graphql.deployment.initContainers.gitSync.repository }}{{ .Values.graphql.deployment.initContainers.gitSync.image }}:{{ .Values.graphql.deployment.initContainers.gitSync.tag }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c']
+        args:
+          - |
+            cd /workdir
+            git clone --depth 1 https://$GIT_PASSWORD@{{ .Values.applicationRepository.projectUrl }} -b {{ .Values.migrateEnvVars.cicdGitBranch }} parkhands
+            cd parkhands
+            git fetch origin {{ .Values.migrateEnvVars.cicdGitRef }}:pr-1
+            git status
+        volumeMounts:
+        - name: git-source
+          mountPath: /workdir
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: password
+      - name: setup-sqitch-conf
+        image: busybox:1.28
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'sed -i s^__POSTGRESQL_PASSWORD__^"${POSTGRESQL_PASSWORD}^g" /repo/sqitch.conf']
+        env:
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        volumeMounts:
+        - name: git-source
+          mountPath: /repo
+          subPath: parkhands/db/migrations
+      - name: wait-sqitch
+        image: sqitch/sqitch:1.0.0
+        securityContext:
+          allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'until sqitch status --target db:pg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@${DB_HOST:-postgresql-ha-pgpool}:${DB_PORT:-5432}/${POSTGRESQL_DB:-app} | grep "up-to-date"; do echo waiting for sqitch migrations; sleep 5; done;']
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_PORT
+        volumeMounts:
+        - name: git-source
+          mountPath: /repo
+          subPath: parkhands/db/migrations
+      containers:
+      - name: ph-graphql
+        image: {{ .Values.graphql.deployment.containers.phGraphql.repository }}{{ .Values.graphql.deployment.containers.phGraphql.image }}:{{ .Values.migrateEnvVars.deployGraphqlImageTag }}
+        imagePullPolicy: {{ .Values.graphql.deployment.containers.phGraphql.imagePullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+        ports:
+        - containerPort: 5000
+        command: ['sh', '-c',  'node server.js']
+        envFrom:
+        - configMapRef:
+            name: env-configmap
+        - secretRef:
+            name: env-secrets
+        livenessProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: {{ .Values.graphql.deployment.containers.phGraphql.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.graphql.deployment.containers.phGraphql.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.graphql.deployment.containers.phGraphql.livenessProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.graphql.deployment.containers.phGraphql.livenessProbe.successThreshold }}
+          failureThreshold: {{ .Values.graphql.deployment.containers.phGraphql.livenessProbe.failureThreshold }}
+        readinessProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: {{ .Values.graphql.deployment.containers.phGraphql.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.graphql.deployment.containers.phGraphql.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.graphql.deployment.containers.phGraphql.readinessProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.graphql.deployment.containers.phGraphql.readinessProbe.successThreshold }}
+          failureThreshold: {{ .Values.graphql.deployment.containers.phGraphql.readinessProbe.failureThreshold }}
+        resources:
+          requests:
+            cpu: {{ .Values.graphql.deployment.containers.phGraphql.resources.requests.cpu }}
+            memory: {{ .Values.graphql.deployment.containers.phGraphql.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.graphql.deployment.containers.phGraphql.resources.limits.cpu }}
+            memory: {{ .Values.graphql.deployment.containers.phGraphql.resources.limits.memory }}
+        volumeMounts:
+        - name: graphql-schema
+          mountPath: /schema
+      restartPolicy: Always
+      volumes:
+      - name: graphql-schema
+        emptyDir: {}
+      - name: git-source
+        emptyDir: {}
+status: {}

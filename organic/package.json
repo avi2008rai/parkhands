@@ -1,0 +1,34 @@
+{
+  "name": "parkhands-organic",
+  "version": "1.0.181",
+  "main": "index.js",
+  "scripts": {
+    "dev-start": "pm2 start pm2.config.js --watch",
+    "dev-stop": "pm2 stop all pm2.config.js",
+    "dev-status": "pm2 status pm2.config.js",
+    "event-hub-start": "pm2 start pm2.config.js --only event-hub --watch",
+    "event-hub-stop": "pm2 stop pm2.config.js --only event-hub",
+    "file-api-start": "pm2 start pm2.config.js --only file-api --watch",
+    "file-api-stop": "pm2 stop pm2.config.js --only file-api",
+    "rest-api-start": "pm2 start pm2.config.js --only rest-api --watch",
+    "rest-api-stop": "pm2 stop pm2.config.js --only rest-api",
+    "payment-hub-start": "pm2 start pm2.config.js --only payment-hub --watch",
+    "payment-hub-stop": "pm2 stop pm2.config.js --only payment-hub",
+    "dataset-transformer-start": "pm2 start pm2.config.js --only dataset-transformer --watch",
+    "dataset-transformer-stop": "pm2 stop pm2.config.js --only dataset-transformer"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/camplight/parkhands.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/camplight/parkhands/issues"
+  },
+  "homepage": "https://github.com/camplight/parkhands#readme",
+  "dependencies": {
+    "hjson": "3.2.1",
+    "pm2": "^5.1.0"
+  }
+}

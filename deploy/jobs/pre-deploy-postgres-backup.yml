@@ -1,0 +1,161 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pre-deploy-postgres-backup-job
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 120
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: parkhands-registry-secret
+      initContainers:
+        - name: wait-backup-storage
+          image: docker.io/radial/busyboxplus:curl
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+          command: ['sh', '-c', 'until curl -sSf --insecure https://${MINIO_BACKUP_URL}/minio/health/live > /dev/null; do echo waiting for Minio to start; sleep 5; done;']  # FIXME
+          env:
+            - name: MINIO_BACKUP_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: release-info
+                  key: minioBackupUrl
+        - name: git-sync
+          image: docker.io/alpine/git:v2.24.1
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+          command: ['sh', '-c']
+          args:
+            - |
+              cd /workdir
+              git clone --depth 1 https://$GIT_USERNAME:$GIT_PASSWORD@github.com/diconium/Parkhands -b $GIT_BRANCH parkhands
+              cd parkhands
+              git fetch origin $GIT_REF:pr-1
+              git status
+          volumeMounts:
+            - name: git-source
+              mountPath: /workdir
+          env:
+            - name: GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: github-credentials
+                  key: username
+            - name: GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: github-credentials
+                  key: password
+            - name: GIT_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: release-info
+                  key: gitRef
+            - name: GIT_BRANCH
+              valueFrom:
+                configMapKeyRef:
+                  name: release-info
+                  key: gitBranch
+      containers:
+        - name: postgres-backup
+          image: docker.io/postgres:11.5
+          securityContext:
+            allowPrivilegeEscalation: false
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              apt-get update > /dev/null
+              apt-get install -y python3 > /dev/null
+              chmod +x /usr/local/bin/autopgsqlbackup.sh
+              /usr/local/bin/./autopgsqlbackup.sh -c /usr/local/bin/./pre-deploy-db-backup-config.sh
+              touch /tmp/pod/main-terminated
+          env:
+            - name: DB_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: release-info
+                  key: gitBranch
+            - name: PGHOST
+              valueFrom:
+                configMapKeyRef:
+                  name: env-configmap
+                  key: DB_HOST
+            - name: PGDATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: env-configmap
+                  key: DB_NAME
+            - name: PGUSER
+              valueFrom:
+                configMapKeyRef:
+                  name: env-configmap
+                  key: POSTGRESQL_USERNAME
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: env-secrets
+                  key: POSTGRESQL_PASSWORD
+            - name: GIT_COMMIT_HASH
+              valueFrom:
+                configMapKeyRef:
+                  name: release-info
+                  key: gitCommitHash
+          volumeMounts:
+            - name: git-source
+              mountPath: /usr/local/bin/
+              subPath: parkhands/scripts/db/backup/
+            - name: backup-dir
+              mountPath: /storage
+            - name: tmp-pod
+              mountPath: /tmp/pod
+        - name: copy-backup
+          image: minio/mc:RELEASE.2020-04-04T05-28-55Z
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while [ ! -f /tmp/pod/main-terminated ]; do echo waiting for main pod to terminate; sleep 2; done;
+              mc config host add backup https://${MINIO_BACKUP_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} --api S3v4 --insecure
+              mc mirror /storage/postgresql/pre-deployment-backups/ backup/${NAMESPACE}/postgresql/pre-deployment-backups/
+          env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: env-secrets
+                  key: BACKUP_MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: env-secrets
+                  key: BACKUP_MINIO_SECRET_KEY
+            - name: NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: release-info
+                  key: namespace
+            - name: MINIO_BACKUP_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: release-info
+                  key: minioBackupUrl
+          volumeMounts:
+            - name: backup-dir
+              mountPath: /storage
+              readOnly: true
+            - name: tmp-pod
+              mountPath: /tmp/pod
+              readOnly: true
+      volumes:
+        - name: git-source
+          emptyDir: {}
+        - name: backup-dir
+          emptyDir: {}
+        - name: tmp-pod
+          emptyDir: {}

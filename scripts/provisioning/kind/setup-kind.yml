@@ -1,0 +1,11 @@
+---
+- hosts: all
+  tasks:
+    - name: Download kind.
+      shell: curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.8.1/kind-$(uname)-amd64
+
+    - name: Set permissions to script.
+      shell: chmod +x ./kind
+
+    - name: Move script to /usr/local/bin
+      shell: mv ./kind /usr/local/bin/kind

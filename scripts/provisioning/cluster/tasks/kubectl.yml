@@ -1,0 +1,9 @@
+---
+- name: Get a list of all namespaces
+  k8s_info:
+    kind: Namespace
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: ns_list
+
+- debug:
+    var: ns_list

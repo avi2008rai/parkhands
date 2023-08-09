@@ -1,0 +1,51 @@
+version: '3.5'
+
+services:
+  storage:
+    image: minio/minio:RELEASE.2020-04-04T05-39-31Z
+    container_name: ph_storage
+    ports:
+      - '9443:${MINIO_PORT}'
+    volumes:
+      - '/storage:/storage'
+      - './certs:/root/.minio/certs'
+    environment:
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+    entrypoint: sh
+    command: >
+      -c 'mkdir -p /storage/logs
+      &&  mkdir -p /storage/velero
+      &&  mkdir -p /storage/postgresql/postgresql-backups
+      &&  /usr/bin/minio server --address ":443" /storage'
+    networks:
+      - ci-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "https://localhost:443/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: always
+
+  storage-client:
+    image: minio/mc:RELEASE.2020-04-04T05-28-55Z
+    container_name: ph_storage_client
+    depends_on:
+      - storage
+    environment:
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_PORT=${MINIO_PORT}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+    entrypoint: sh
+    command: >
+      -c 'sleep 10
+      &&  mc config host add backup https://${MINIO_ENDPOINT}:9443 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} --api S3v4 --insecure
+      &&  mc policy set download backup/static --insecure'
+    networks:
+      - ci-net
+
+networks:
+  ci-net:
+    name: ph_ci-net
+    driver: bridge

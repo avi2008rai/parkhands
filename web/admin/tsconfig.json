@@ -1,0 +1,15 @@
+{
+  "extends": "../shared/tsconfig.shared",
+  "compilerOptions": {
+    "baseUrl": "../",
+    "paths": {
+      "*": [
+        "admin/*",
+        "shared/*"
+      ]
+    },
+  },
+  "exclude": [
+    "./test"
+  ]
+}

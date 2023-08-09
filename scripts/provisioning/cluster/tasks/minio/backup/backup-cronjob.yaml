@@ -1,0 +1,50 @@
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: backup-mirror
+  namespace: backup
+spec:
+  schedule: "30 1 * * *"
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        spec:
+          initContainers:
+          - name: wait-backup
+            image: radial/busyboxplus:curl
+            command: ['sh', '-c', 'until curl -sSf --insecure https://backup.parkhands.com:9443/minio/health/live > /dev/null; do echo waiting for Minio to start; sleep 5; done;']
+          - name: wait-backup-mirror
+            image: radial/busyboxplus:curl
+            command: ['sh', '-c', 'until curl -sSf https://backup-mirror.parkhands.com/minio/health/live > /dev/null; do echo waiting for Minio to start; sleep 5; done;']
+          containers:
+          - name: backup-mirror
+            image: minio/mc:RELEASE.2020-04-04T05-28-55Z
+            imagePullPolicy: IfNotPresent
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                mc config host add backup https://backup.parkhands.com:9443 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} --api S3v4 --insecure
+                mc config host add backup-mirror https://backup-mirror.parkhands.com ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} --api S3v4
+                mc mirror backup-mirror/velero backup/velero --insecure
+                mc mirror backup-mirror/logs backup/logs --insecure
+            env:
+            - name: MINIO_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backup-configmap
+                  key: MINIO_PORT
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backup-secrets
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backup-secrets
+                  key: MINIO_SECRET_KEY
+            volumeMounts:
+          restartPolicy: Never

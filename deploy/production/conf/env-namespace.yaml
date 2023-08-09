@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ CICD_NAMESPACE }}
+  labels:
+    name: {{ CICD_NAMESPACE }}
+  annotations:
+    field.cattle.io/projectId: {{ CICD_CLUSTER_ID }}:{{ CICD_PROJECT_ID }}
+spec:
+  finalizers:
+    - kubernetes
+status:
+  phase: Active

@@ -1,0 +1,96 @@
+---
+{{- if not (eq .Values.migrateEnvVars.cicdNamespace "production") }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.migrateEnvVars.cicdExecutionSequence }}-test-db
+  namespace: {{ .Values.migrateEnvVars.cicdTestNamespace }}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      {{- if .Values.containerRegistryPublic.pullSecret -}}
+      imagePullSecrets:
+      - name: {{ .Values.containerRegistryPublic.pullSecret }}
+      {{- else }}
+      {{ end -}}
+      initContainers:
+      - name: git-sync
+        image: {{ .Values.containerRegistryPublic.baseUrl }}alpine/git:v2.24.1
+        command: ['sh', '-c']
+        args:
+          - |
+            cd /workdir
+            git clone --depth 1 https://$GIT_PASSWORD@{{ .Values.migrateEnvVars.gitCloneUrl }} -b {{ .Values.migrateEnvVars.cicdGitBranch }} parkhands
+            cd parkhands
+            git fetch origin {{ .Values.migrateEnvVars.cicdGitRef }}:pr-1
+            git status
+        volumeMounts:
+        - name: git-source
+          mountPath: /workdir
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: github-credentials
+                key: password
+      - name: wait-graphql
+        image: {{ .Values.containerRegistryPublic.baseUrl }}radial/busyboxplus:curl
+        command: ['sh', '-c']
+        args:
+          - |
+            until curl -sSf -X POST -H "Content-Type: application/json" --data '{"query": "{ languagesList { name } }"}' ${GRAPHQL_API_URL} > /dev/null; do echo waiting for GraphQL API; sleep 2; done;
+        env:
+        - name: GRAPHQL_API_URL
+          value: http://graphql:5000/graphql
+      containers:
+      - name: ph-test-db
+        image: {{ .Values.containerRegistryPublic.baseUrl }}horrendo/pg_prove:latest
+        imagePullPolicy: IfNotPresent
+        securityContext:
+            allowPrivilegeEscalation: false
+        command: ['sh', '-c', 'pg_prove *.sql']
+        env:
+        - name: DB_ENV
+          value: {{ .Values.migrateEnvVars.cicdGitBranch }}
+        - name: PGHOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_HOST
+        - name: PGDATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: DB_NAME
+        - name: PGUSER
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: POSTGRESQL_USERNAME
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: env-secrets
+              key: POSTGRESQL_PASSWORD
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: env-configmap
+              key: NODE_ENV
+        volumeMounts:
+        - name: git-source
+          mountPath: /tmp
+          subPath: parkhands/db/migrations/test
+      restartPolicy: Never
+      volumes:
+      - name: git-source
+        emptyDir: {}
+{{- else }}
+{{ end -}}

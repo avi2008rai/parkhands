@@ -1,0 +1,28 @@
+---
+kind: Ingress
+apiVersion: extensions/v1beta1
+metadata:
+  name: storage
+  namespace: {{ CICD_TEST_NAMESPACE }}
+  annotations:
+    kubernetes.io/ingress.class: nginx-external
+    kubernetes.io/tls-acme: "true"
+    cert-manager.io/cluster-issuer: dico-clusterissuer
+    kubernetes.io/ingress.allow-http: "false"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    nginx.ingress.kubernetes.io/app-root: /minio
+    # cert-manager.io/acme-challenge-type: http01
+    # cert-manager.io/cluster-issuer: "letsencrypt-production"
+spec:
+  tls:
+  - hosts:
+    - storage.{{ CICD_GIT_BRANCH }}.{{ ROOT_DOMAIN }}
+    secretName: parkhands-storage-{{ CICD_GIT_BRANCH }}-tls
+  rules:
+    - host: storage.{{ CICD_GIT_BRANCH }}.{{ ROOT_DOMAIN }}
+      http:
+        paths:
+          - backend:
+              serviceName: storage
+              servicePort: 9000
+            path: /

@@ -1,0 +1,14 @@
+---
+- name: Update configmap for grafana with loki as datasource
+  k8s:
+    state: present
+    src: "{{ playbook_dir }}/tasks/cluster-monitoring/configmap/grafana-cluster-monitoring-provisionings.yml"
+    kubeconfig: "{{ kubeconfig_path }}"
+
+- name: Update grafana image
+  shell: |
+    kubectl set image \
+      deployment/grafana-cluster-monitoring grafana=grafana/grafana:6.7.3 \
+      --namespace=cattle-prometheus \
+      --record \
+      --kubeconfig="{{ kubeconfig_path }}"

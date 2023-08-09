@@ -1,0 +1,434 @@
+stages:
+################################################################################
+- name: Prepare resources
+  steps:
+  - runScriptConfig:
+      image: williamyeh/ansible:alpine3
+      shellScript: |-
+        ansible-playbook -i deploy/inventory ./deploy/pipeline_prepare_resources.yaml
+    env:
+      DEPLOY_DB_IMAGE_TAG: 1.0.0
+      DEPLOY_GRAPHQL_IMAGE_TAG: 1.0.181
+      DEPLOY_ADMIN_IMAGE_TAG: LATEST
+      DEPLOY_CLIENT_IMAGE_TAG: 1.0.180
+      DEPLOY_WIDGET_IMAGE_TAG: 1.0.146
+      DEPLOY_ORGANIC_IMAGE_TAG: 1.0.181
+      DEPLOY_IMAGE_RESIZER_IMAGE_TAG: 1.0.0
+
+################################################################################
+##__START_BUILD_DB_IMAGE_BLOCK__
+#- name: Build DB Docker image
+#  when:
+#    branch:
+#      exclude: [ production ]
+#  steps:
+#  - publishImageConfig:
+#      dockerfilePath: ./db/Dockerfile
+#      buildContext: ./db
+#      tag: parkhands-de/ph_postgresql-repmgr
+#      pushRemote: true
+#      registry: eu.gcr.io
+#    cpuRequest: 10m
+#    cpuLimit: 500m
+#    memoryRequest: 100Mi
+#    memoryLimit: 1Gi
+##__END_BUILD_DB_IMAGE_BLOCK__
+
+##__START_BUILD_GRAPHQL_IMAGE_BLOCK__
+#- name: Build GraphQL Docker image
+#  when:
+#    branch:
+#      exclude: [ production ]
+#  steps:
+#  - publishImageConfig:
+#      dockerfilePath: ./graphql/Dockerfile
+#      buildContext: ./graphql
+#      tag: parkhands-de/ph_graphql
+#      pushRemote: true
+#      registry: eu.gcr.io
+#    cpuRequest: 10m
+#    cpuLimit: 500m
+#    memoryRequest: 100Mi
+#    memoryLimit: 1Gi
+##__END_BUILD_GRAPHQL_IMAGE_BLOCK__
+
+#__START_BUILD_ADMIN_IMAGE_BLOCK__
+- name: Build Admin Docker image
+  when:
+    branch:
+      exclude: [ production ]
+  steps:
+  - publishImageConfig:
+      dockerfilePath: ./web/admin/Dockerfile
+      buildContext: ./web
+      tag: parkhands-de/ph_admin
+      pushRemote: true
+      registry: eu.gcr.io
+    cpuRequest: 10m
+    cpuLimit: 500m
+    memoryRequest: 100Mi
+    memoryLimit: 1Gi
+#__END_BUILD_ADMIN_IMAGE_BLOCK__
+
+##__START_BUILD_CLIENT_IMAGE_BLOCK__
+#- name: Build Client Docker image
+#  when:
+#    branch:
+#      exclude: [ production ]
+#  steps:
+#  - publishImageConfig:
+#      dockerfilePath: ./web/client/Dockerfile
+#      buildContext: ./web
+#      tag: parkhands-de/ph_client
+#      pushRemote: true
+#      registry: eu.gcr.io
+#    cpuRequest: 10m
+#    cpuLimit: 500m
+#    memoryRequest: 500Mi
+#    memoryLimit: 2Gi
+##__END_BUILD_CLIENT_IMAGE_BLOCK__
+
+##__START_BUILD_WIDGET_IMAGE_BLOCK__
+#- name: Build Widget Docker image
+#  when:
+#    branch:
+#      exclude: [ production ]
+#  steps:
+#  - publishImageConfig:
+#      dockerfilePath: ./web/widget/Dockerfile
+#      buildContext: ./web
+#      tag: parkhands-de/ph_widget
+#      pushRemote: true
+#      registry: eu.gcr.io
+#    cpuRequest: 10m
+#    cpuLimit: 500m
+#    memoryRequest: 100Mi
+#    memoryLimit: 1Gi
+##__END_BUILD_WIDGET_IMAGE_BLOCK__
+
+##__START_BUILD_ORGANIC_IMAGE_BLOCK__
+#- name: Build Organic Docker image
+#  when:
+#    branch:
+#      exclude: [ production ]
+#  steps:
+#  - publishImageConfig:
+#      dockerfilePath: ./organic/Dockerfile
+#      buildContext: ./organic
+#      tag: parkhands-de/ph_organic
+#      pushRemote: true
+#      registry: eu.gcr.io
+#    cpuRequest: 10m
+#    cpuLimit: 500m
+#    memoryRequest: 100Mi
+#    memoryLimit: 1Gi
+##__END_BUILD_ORGANIC_IMAGE_BLOCK__
+
+##__START_BUILD_IMAGE_RESIZER_IMAGE_BLOCK__
+#- name: Build image-resizer Docker image
+#  when:
+#    branch:
+#      exclude: [ production ]
+#  steps:
+#  - publishImageConfig:
+#      dockerfilePath: ./scripts/storage/minio-image-resizer/Dockerfile
+#      buildContext: ./scripts/storage/minio-image-resizer
+#      tag: parkhands-de/ph_image_resizer
+#      pushRemote: true
+#      registry: eu.gcr.io
+#    cpuRequest: 10m
+#    cpuLimit: 500m
+#    memoryRequest: 100Mi
+#    memoryLimit: 1Gi
+##__END_BUILD_IMAGE_RESIZER_IMAGE_BLOCK__
+
+################################################################################
+- name: Deploy test resources
+  when:
+    branch:
+      exclude: [ staging, production ]
+  steps:
+  - runScriptConfig:
+      image: dtzar/helm-kubectl:3.1.2
+      shellScript: |-
+        kubectl version
+        helm version
+        # Authorize client with our kubernetes config
+        set +x
+        printf '%s\n' "${CLUSTER_KUBECONFIG}" > ~/.kube/config
+        set -x
+        # Get working namespace from repository
+        CICD_TEST_NAMESPACE=`cat .CICD_TEST_NAMESPACE`
+        # Deploy all resources at once
+        kubectl create -f ./deploy/test/parkhands-test-resources.yaml
+        # Check status of deployed resources
+        sleep 5
+        if ! kubectl rollout status deployment graphql --namespace=${CICD_TEST_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment graphql --namespace=${CICD_TEST_NAMESPACE}
+          kubectl rollout status deployment graphql --namespace=${CICD_TEST_NAMESPACE}
+          exit 1
+        fi
+        if ! kubectl rollout status deployment admin --namespace=${CICD_TEST_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment admin --namespace=${CICD_TEST_NAMESPACE}
+          kubectl rollout status deployment admin --namespace=${CICD_TEST_NAMESPACE}
+          exit 1
+        fi
+        if ! kubectl rollout status deployment client --namespace=${CICD_TEST_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment client --namespace=${CICD_TEST_NAMESPACE}
+          kubectl rollout status deployment client --namespace=${CICD_TEST_NAMESPACE}
+          exit 1
+        fi
+        if ! kubectl rollout status deployment widget --namespace=${CICD_TEST_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment widget --namespace=${CICD_TEST_NAMESPACE}
+          kubectl rollout status deployment widget --namespace=${CICD_TEST_NAMESPACE}
+          exit 1
+        fi
+        if ! kubectl rollout status deployment organic --namespace=${CICD_TEST_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment organic --namespace=${CICD_TEST_NAMESPACE}
+          kubectl rollout status deployment organic --namespace=${CICD_TEST_NAMESPACE}
+          exit 1
+        fi
+    envFrom:
+    - sourceName: cluster-kubeconfig
+      sourceKey: config
+      targetKey: CLUSTER_KUBECONFIG
+
+- name: Run DB tests
+  when:
+    branch:
+      exclude: [ staging, production ]
+  steps:
+  - runScriptConfig:
+      image: dtzar/helm-kubectl:3.1.2
+      shellScript: |-
+        kubectl version
+        helm version
+        # Authorize client with our kubernetes config
+        set +x
+        printf '%s\n' "${CLUSTER_KUBECONFIG}" > ~/.kube/config
+        set -x
+        # Get working namespace from repository
+        CICD_TEST_NAMESPACE=`cat .CICD_TEST_NAMESPACE`
+        # Deploy all resources at once
+        kubectl apply -f ./deploy/test/jobs/test-db-job.yaml
+        # Check status of DB test job
+        sleep 30
+        kubectl logs job/${CICD_EXECUTION_SEQUENCE}-test-db --namespace=${CICD_TEST_NAMESPACE} --follow
+        if [ `kubectl get job/${CICD_EXECUTION_SEQUENCE}-test-db --namespace=${CICD_TEST_NAMESPACE} -o=jsonpath='{.status.conditions[*].type}' | grep -i -E 'failed|complete'` = "Failed" ]; then
+          exit 1
+        fi
+    envFrom:
+    - sourceName: cluster-kubeconfig
+      sourceKey: config
+      targetKey: CLUSTER_KUBECONFIG
+
+- name: Run API tests
+  when:
+    branch:
+      exclude: [ staging, production ]
+  steps:
+  - runScriptConfig:
+      image: dtzar/helm-kubectl:3.1.2
+      shellScript: |-
+        kubectl version
+        helm version
+        # Authorize client with our kubernetes config
+        set +x
+        printf '%s\n' "${CLUSTER_KUBECONFIG}" > ~/.kube/config
+        set -x
+        # Get working namespace from repository
+        CICD_TEST_NAMESPACE=`cat .CICD_TEST_NAMESPACE`
+        # Deploy all resources at once
+        kubectl apply -f ./deploy/test/jobs/test-api-job.yaml
+        # Check status of API test job
+        sleep 30
+        kubectl logs job/${CICD_EXECUTION_SEQUENCE}-test-api --namespace=${CICD_TEST_NAMESPACE} --follow
+        if [ `kubectl get job/${CICD_EXECUTION_SEQUENCE}-test-api --namespace=${CICD_TEST_NAMESPACE} -o=jsonpath='{.status.conditions[*].type}' | grep -i -E 'failed|complete'` = "Failed" ]; then
+          exit 1
+        fi
+    envFrom:
+    - sourceName: cluster-kubeconfig
+      sourceKey: config
+      targetKey: CLUSTER_KUBECONFIG
+
+- name: Run Organic tests
+  when:
+    branch:
+      exclude: [ staging, production ]
+  steps:
+  - runScriptConfig:
+      image: dtzar/helm-kubectl:3.1.2
+      shellScript: |-
+        kubectl version
+        helm version
+        # Authorize client with our kubernetes config
+        set +x
+        printf '%s\n' "${CLUSTER_KUBECONFIG}" > ~/.kube/config
+        set -x
+        # Get working namespace from repository
+        CICD_TEST_NAMESPACE=`cat .CICD_TEST_NAMESPACE`
+        # Deploy all resources at once
+        kubectl apply -f ./deploy/test/jobs/test-organic-job.yaml
+        # Check status of API test job
+        sleep 30
+        kubectl logs job/${CICD_EXECUTION_SEQUENCE}-test-organic --namespace=${CICD_TEST_NAMESPACE} --follow
+        if [ `kubectl get job/${CICD_EXECUTION_SEQUENCE}-test-organic --namespace=${CICD_TEST_NAMESPACE} -o=jsonpath='{.status.conditions[*].type}' | grep -i -E 'failed|complete'` = "Failed" ]; then
+          exit 1
+        fi
+    envFrom:
+    - sourceName: cluster-kubeconfig
+      sourceKey: config
+      targetKey: CLUSTER_KUBECONFIG
+
+# - name: Run UI Admin tests
+#   steps:
+#   - runScriptConfig:
+#       image: dtzar/helm-kubectl:3.1.2
+#       shellScript: |-
+#         kubectl version
+#         helm version
+#         # Authorize client with our kubernetes config
+#         set +x
+#         printf '%s\n' "${CLUSTER_KUBECONFIG}" > ~/.kube/config
+#         set -x
+#         # Get working namespace from repository
+#         CICD_TEST_NAMESPACE=`cat .CICD_TEST_NAMESPACE`
+#         # Deploy all resources at once
+#         kubectl apply -f ./deploy/test/jobs/test-ui-admin-job.yaml
+#         # Check status of API test job
+#         sleep 180
+#         kubectl logs job/${CICD_EXECUTION_SEQUENCE}-test-ui-admin --namespace=${CICD_TEST_NAMESPACE} --follow
+#         if [ `kubectl get job/${CICD_EXECUTION_SEQUENCE}-test-ui-admin --namespace=${CICD_TEST_NAMESPACE} -o=jsonpath='{.status.conditions[*].type}' | grep -i -E 'failed|complete'` = "Failed" ]; then
+#           exit 1
+#         fi
+#     envFrom:
+#     - sourceName: cluster-kubeconfig
+#       sourceKey: config
+#       targetKey: CLUSTER_KUBECONFIG
+
+- name: Cleanup test resources
+  when:
+    branch:
+      exclude: [ staging, production ]
+  steps:
+  - runScriptConfig:
+      image: dtzar/helm-kubectl:3.1.2
+      shellScript: |-
+        kubectl version
+        helm version
+        # Authorize client with our kubernetes config
+        set +x
+        printf '%s\n' "${CLUSTER_KUBECONFIG}" > ~/.kube/config
+        set -x
+        # Get working namespace from repository
+        CICD_TEST_NAMESPACE=`cat .CICD_TEST_NAMESPACE`
+        # If all good, then automated tests passed. Delete namespace now
+        kubectl delete namespace ${CICD_TEST_NAMESPACE} --wait=true
+    envFrom:
+    - sourceName: cluster-kubeconfig
+      sourceKey: config
+      targetKey: CLUSTER_KUBECONFIG
+
+################################################################################
+- name: Deploy main resources
+  when:
+    branch:
+      include: [ staging, production ]
+  steps:
+  - runScriptConfig:
+      image: dtzar/helm-kubectl:3.1.2
+      shellScript: |-
+        kubectl version
+        helm version
+        # Authorize client with our kubernetes config
+        set +x
+        printf '%s\n' "${CLUSTER_KUBECONFIG}" > ~/.kube/config
+        set -x
+        # Get working namespace from repository
+        CICD_NAMESPACE=`cat .CICD_NAMESPACE`
+        # Deploy initial resources at once
+        kubectl apply -f ./deploy/$CICD_NAMESPACE/parkhands-initial.yaml
+        # Check status of deployed resources
+        sleep 5
+
+        # install postgresql-ha helm chart
+        helm upgrade --install postgresql-ha ./deploy/charts/postgresql-ha \
+          --namespace=$CICD_NAMESPACE \
+          --version=3.2.3 \
+          -f ./deploy/$CICD_NAMESPACE/db/values.yaml
+
+        if ! kubectl rollout status sts postgresql-ha-postgresql --namespace=${CICD_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo sts postgresql-ha-postgresql --namespace=${CICD_NAMESPACE}
+          kubectl rollout status sts postgresql-ha-postgresql --namespace=${CICD_NAMESPACE}
+          exit 1
+        fi
+
+        if ! kubectl rollout status deployment postgresql-ha-pgpool --namespace=${CICD_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment postgresql-ha-pgpool --namespace=${CICD_NAMESPACE}
+          kubectl rollout status deployment postgresql-ha-pgpool --namespace=${CICD_NAMESPACE}
+          exit 1
+        fi
+
+        # Deploy main resources at once
+        kubectl apply -f ./deploy/$CICD_NAMESPACE/parkhands-resources.yaml
+        # Check status of deployed resources
+        sleep 5
+
+        if ! kubectl rollout status deployment graphql --namespace=${CICD_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment graphql --namespace=${CICD_NAMESPACE}
+          kubectl rollout status deployment graphql --namespace=${CICD_NAMESPACE}
+          exit 1
+        fi
+        if ! kubectl rollout status deployment admin --namespace=${CICD_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment admin --namespace=${CICD_NAMESPACE}
+          kubectl rollout status deployment admin --namespace=${CICD_NAMESPACE}
+          exit 1
+        fi
+        if ! kubectl rollout status deployment client --namespace=${CICD_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment client --namespace=${CICD_NAMESPACE}
+          kubectl rollout status deployment client --namespace=${CICD_NAMESPACE}
+          exit 1
+        fi
+        if ! kubectl rollout status deployment widget --namespace=${CICD_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment widget --namespace=${CICD_NAMESPACE}
+          kubectl rollout status deployment widget --namespace=${CICD_NAMESPACE}
+          exit 1
+        fi
+        if ! kubectl rollout status deployment organic --namespace=${CICD_NAMESPACE}; then
+          echo "Rolling back deployment!" >&2
+          kubectl rollout undo deployment organic --namespace=${CICD_NAMESPACE}
+          kubectl rollout status deployment organic --namespace=${CICD_NAMESPACE}
+          exit 1
+        fi
+    envFrom:
+    - sourceName: cluster-kubeconfig
+      sourceKey: config
+      targetKey: CLUSTER_KUBECONFIG
+
+################################################################################
+branch:
+  include: [ staging, production, feature/* ]
+  exclude: [ master ]
+
+timeout: 60
+
+################################################################################
+notification:
+  recipients:
+  - recipient: '#parkhands-ci'
+    notifier: c-r7zw5:n-rkc7v
+  condition:
+  - Success
+  - Changed
+  - Failed
